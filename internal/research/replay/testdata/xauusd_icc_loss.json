@@ -1,0 +1,124 @@
+{
+  "name": "xauusd-new-york-icc-gap-loss",
+  "initial_equity_minor": 1000000,
+  "instrument": {
+    "Symbol": "XAUUSD",
+    "BaseCurrency": "XAU",
+    "QuoteCurrency": "USD",
+    "PriceScale": 100,
+    "TickSize": 1,
+    "QuantityStep": 1,
+    "MinQuantity": 1,
+    "MaxQuantity": 1000
+  },
+  "price_value": {
+    "AccountCurrency": "USD",
+    "Numerator": 1,
+    "Denominator": 1
+  },
+  "paper": {
+    "account_id": "paper-xauusd",
+    "max_quote_age": 5000000000,
+    "slippage_ticks": 2,
+    "half_spread_ticks_for_candle": 2,
+    "commission_per_quantity_step_minor": 5
+  },
+  "risk": {},
+  "icc": {},
+  "execution": {
+    "StrategyID": "icc",
+    "StrategyVersion": "v1",
+    "IntentTTL": 60000000000,
+    "RiskBPS": 25,
+    "RewardRiskBPS": 20000,
+    "StopBufferTicks": 10,
+    "SlippageTicks": 2,
+    "RoundTripCommissionPerStepMinor": 10
+  },
+  "events": [
+    {
+      "at": "2026-08-18T12:00:00Z",
+      "kind": "CONTEXT",
+      "h4_trend": "BULLISH",
+      "h1_trend": "BULLISH"
+    },
+    {
+      "at": "2026-08-18T13:00:00Z",
+      "kind": "INDICATION",
+      "direction": "BULLISH_BREAK",
+      "broken_level": 239800,
+      "invalidation_price": 238500,
+      "allowed_session": true,
+      "candle": {
+        "Source": "fixture",
+        "Symbol": "XAUUSD",
+        "Timeframe": 3600000000000,
+        "OpenTime": "2026-08-18T12:00:00Z",
+        "CloseTime": "2026-08-18T13:00:00Z",
+        "Open": 239800,
+        "High": 240200,
+        "Low": 239500,
+        "Close": 240100,
+        "TickCount": 100
+      }
+    },
+    {
+      "at": "2026-08-18T14:00:00Z",
+      "kind": "SETUP_CANDLE",
+      "candle": {
+        "Source": "fixture",
+        "Symbol": "XAUUSD",
+        "Timeframe": 3600000000000,
+        "OpenTime": "2026-08-18T13:00:00Z",
+        "CloseTime": "2026-08-18T14:00:00Z",
+        "Open": 240050,
+        "High": 240120,
+        "Low": 239700,
+        "Close": 239900,
+        "TickCount": 100
+      }
+    },
+    {
+      "at": "2026-08-18T14:14:59Z",
+      "kind": "QUOTE",
+      "quote": {
+        "Source": "fixture",
+        "Symbol": "XAUUSD",
+        "Bid": 240000,
+        "Ask": 240005,
+        "At": "2026-08-18T14:14:59Z",
+        "Sequence": 1
+      }
+    },
+    {
+      "at": "2026-08-18T14:15:00Z",
+      "kind": "CONFIRMATION",
+      "direction": "BULLISH_BREAK",
+      "allowed_session": true,
+      "candle": {
+        "Source": "fixture",
+        "Symbol": "XAUUSD",
+        "Timeframe": 900000000000,
+        "OpenTime": "2026-08-18T14:00:00Z",
+        "CloseTime": "2026-08-18T14:15:00Z",
+        "Open": 239900,
+        "High": 240100,
+        "Low": 239850,
+        "Close": 240050,
+        "TickCount": 50
+      }
+    },
+    {
+      "at": "2026-08-18T14:16:00Z",
+      "kind": "QUOTE",
+      "quote": {
+        "Source": "fixture",
+        "Symbol": "XAUUSD",
+        "Bid": 239650,
+        "Ask": 239655,
+        "At": "2026-08-18T14:16:00Z",
+        "Sequence": 2
+      }
+    }
+  ]
+}

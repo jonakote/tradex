@@ -1,0 +1,124 @@
+{
+  "name": "eurusd-london-icc-win",
+  "initial_equity_minor": 1000000,
+  "instrument": {
+    "Symbol": "EURUSD",
+    "BaseCurrency": "EUR",
+    "QuoteCurrency": "USD",
+    "PriceScale": 100000,
+    "TickSize": 1,
+    "QuantityStep": 1000,
+    "MinQuantity": 1000,
+    "MaxQuantity": 1000000
+  },
+  "price_value": {
+    "AccountCurrency": "USD",
+    "Numerator": 1,
+    "Denominator": 1
+  },
+  "paper": {
+    "account_id": "paper-eurusd",
+    "max_quote_age": 5000000000,
+    "slippage_ticks": 1,
+    "half_spread_ticks_for_candle": 1,
+    "commission_per_quantity_step_minor": 2
+  },
+  "risk": {},
+  "icc": {},
+  "execution": {
+    "StrategyID": "icc",
+    "StrategyVersion": "v1",
+    "IntentTTL": 60000000000,
+    "RiskBPS": 25,
+    "RewardRiskBPS": 20000,
+    "StopBufferTicks": 2,
+    "SlippageTicks": 1,
+    "RoundTripCommissionPerStepMinor": 4
+  },
+  "events": [
+    {
+      "at": "2026-08-18T08:00:00Z",
+      "kind": "CONTEXT",
+      "h4_trend": "BULLISH",
+      "h1_trend": "BULLISH"
+    },
+    {
+      "at": "2026-08-18T09:00:00Z",
+      "kind": "INDICATION",
+      "direction": "BULLISH_BREAK",
+      "broken_level": 108000,
+      "invalidation_price": 107000,
+      "allowed_session": true,
+      "candle": {
+        "Source": "fixture",
+        "Symbol": "EURUSD",
+        "Timeframe": 3600000000000,
+        "OpenTime": "2026-08-18T08:00:00Z",
+        "CloseTime": "2026-08-18T09:00:00Z",
+        "Open": 108000,
+        "High": 108250,
+        "Low": 107800,
+        "Close": 108200,
+        "TickCount": 100
+      }
+    },
+    {
+      "at": "2026-08-18T10:00:00Z",
+      "kind": "SETUP_CANDLE",
+      "candle": {
+        "Source": "fixture",
+        "Symbol": "EURUSD",
+        "Timeframe": 3600000000000,
+        "OpenTime": "2026-08-18T09:00:00Z",
+        "CloseTime": "2026-08-18T10:00:00Z",
+        "Open": 108150,
+        "High": 108220,
+        "Low": 107900,
+        "Close": 108050,
+        "TickCount": 100
+      }
+    },
+    {
+      "at": "2026-08-18T10:14:59Z",
+      "kind": "QUOTE",
+      "quote": {
+        "Source": "fixture",
+        "Symbol": "EURUSD",
+        "Bid": 108100,
+        "Ask": 108102,
+        "At": "2026-08-18T10:14:59Z",
+        "Sequence": 1
+      }
+    },
+    {
+      "at": "2026-08-18T10:15:00Z",
+      "kind": "CONFIRMATION",
+      "direction": "BULLISH_BREAK",
+      "allowed_session": true,
+      "candle": {
+        "Source": "fixture",
+        "Symbol": "EURUSD",
+        "Timeframe": 900000000000,
+        "OpenTime": "2026-08-18T10:00:00Z",
+        "CloseTime": "2026-08-18T10:15:00Z",
+        "Open": 108050,
+        "High": 108150,
+        "Low": 108000,
+        "Close": 108120,
+        "TickCount": 50
+      }
+    },
+    {
+      "at": "2026-08-18T10:16:00Z",
+      "kind": "QUOTE",
+      "quote": {
+        "Source": "fixture",
+        "Symbol": "EURUSD",
+        "Bid": 108600,
+        "Ask": 108602,
+        "At": "2026-08-18T10:16:00Z",
+        "Sequence": 2
+      }
+    }
+  ]
+}

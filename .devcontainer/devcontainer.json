@@ -1,0 +1,15 @@
+{
+  "name": "Tradex (Go + Docker)",
+  "dockerComposeFile": ["../docker-compose.yml"],
+  "service": "tradex",
+  "workspaceFolder": "/app",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  },
+  "shutdownAction": "stopCompose"
+}
