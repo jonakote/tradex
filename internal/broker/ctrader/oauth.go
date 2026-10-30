@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -33,18 +34,28 @@ func OAuthConfigFromEnv() (OAuthConfig, error) {
 	if config.AuthorizeURL == "" {
 		config.AuthorizeURL = defaultAuthorizationEndpoint
 	}
-	if err := config.Validate(); err != nil {
+	if err := config.validateTokenClient(); err != nil {
 		return OAuthConfig{}, err
 	}
 	return config, nil
 }
 
 func (c OAuthConfig) Validate() error {
-	if c.ClientID == "" || c.ClientSecret == "" || c.RedirectURI == "" {
-		return errors.New("cTrader OAuth client ID, secret, and redirect URI are required")
+	if err := c.validateTokenClient(); err != nil {
+		return err
+	}
+	if c.RedirectURI == "" {
+		return errors.New("cTrader OAuth redirect URI is required for authorization-code flow")
 	}
 	if _, err := url.ParseRequestURI(c.RedirectURI); err != nil {
 		return errors.New("cTrader OAuth redirect URI is invalid")
+	}
+	return nil
+}
+
+func (c OAuthConfig) validateTokenClient() error {
+	if c.ClientID == "" || c.ClientSecret == "" {
+		return errors.New("cTrader OAuth client ID and secret are required")
 	}
 	if _, err := url.ParseRequestURI(c.TokenURL); err != nil {
 		return errors.New("cTrader OAuth token URL is invalid")
@@ -77,7 +88,7 @@ type OAuthClient struct {
 }
 
 func NewOAuthClient(config OAuthConfig, client OAuthHTTP, clock func() time.Time) (*OAuthClient, error) {
-	if err := config.Validate(); err != nil {
+	if err := config.validateTokenClient(); err != nil {
 		return nil, err
 	}
 	if client == nil {
@@ -93,6 +104,9 @@ func (c *OAuthClient) ExchangeAuthorizationCode(ctx context.Context, code string
 	if code == "" {
 		return OAuthToken{}, errors.New("cTrader authorization code is required")
 	}
+	if err := c.config.Validate(); err != nil {
+		return OAuthToken{}, err
+	}
 	values := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {c.config.RedirectURI}, "client_id": {c.config.ClientID}, "client_secret": {c.config.ClientSecret}}
 	return c.exchange(ctx, http.MethodGet, values)
 }
@@ -103,6 +117,94 @@ func (c *OAuthClient) RefreshToken(ctx context.Context, refreshToken string) (OA
 	}
 	values := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refreshToken}, "client_id": {c.config.ClientID}, "client_secret": {c.config.ClientSecret}}
 	return c.exchange(ctx, http.MethodPost, values)
+}
+
+// Refresh implements TokenRefresher so an OAuthClient can be composed with
+// TokenManager without exposing refresh-token material to callers.
+func (c *OAuthClient) Refresh(ctx context.Context, token OAuthToken) (OAuthToken, error) {
+	if err := token.Validate(); err != nil {
+		return OAuthToken{}, err
+	}
+	return c.RefreshToken(ctx, token.RefreshToken)
+}
+
+// ReadOAuthTokenFile loads a token produced by ctrader-oauth-exchange. The
+// file is bounded and strictly decoded so malformed or unexpected credential
+// material is rejected before a socket session is attempted.
+func ReadOAuthTokenFile(path string) (OAuthToken, error) {
+	if path == "" {
+		return OAuthToken{}, errors.New("cTrader OAuth token file path is required")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return OAuthToken{}, fmt.Errorf("open cTrader OAuth token file: %w", err)
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(io.LimitReader(file, 1<<20))
+	decoder.DisallowUnknownFields()
+	var token OAuthToken
+	if err := decoder.Decode(&token); err != nil {
+		return OAuthToken{}, fmt.Errorf("decode cTrader OAuth token file: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return OAuthToken{}, errors.New("decode cTrader OAuth token file: trailing JSON")
+		}
+		return OAuthToken{}, fmt.Errorf("decode cTrader OAuth token file: %w", err)
+	}
+	if err := token.Validate(); err != nil {
+		return OAuthToken{}, fmt.Errorf("validate cTrader OAuth token file: %w", err)
+	}
+	return token, nil
+}
+
+// WriteOAuthTokenFile atomically replaces a token file with mode 0600. It is
+// intended for refresh-token rotation and never prints token contents.
+func WriteOAuthTokenFile(path string, token OAuthToken) error {
+	if path == "" {
+		return errors.New("cTrader OAuth token file path is required")
+	}
+	if err := token.Validate(); err != nil {
+		return fmt.Errorf("validate cTrader OAuth token for storage: %w", err)
+	}
+	directory := filepath.Dir(path)
+	temporary, err := os.CreateTemp(directory, ".ctrader-token-*")
+	if err != nil {
+		return fmt.Errorf("create temporary cTrader OAuth token file: %w", err)
+	}
+	temporaryName := temporary.Name()
+	cleanup := func() {
+		_ = temporary.Close()
+		_ = os.Remove(temporaryName)
+	}
+	if err := temporary.Chmod(0o600); err != nil {
+		cleanup()
+		return fmt.Errorf("protect temporary cTrader OAuth token file: %w", err)
+	}
+	encoded, err := json.MarshalIndent(token, "", "  ")
+	if err != nil {
+		cleanup()
+		return fmt.Errorf("encode cTrader OAuth token file: %w", err)
+	}
+	encoded = append(encoded, '\n')
+	if _, err := temporary.Write(encoded); err != nil {
+		cleanup()
+		return fmt.Errorf("write temporary cTrader OAuth token file: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		cleanup()
+		return fmt.Errorf("sync temporary cTrader OAuth token file: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		_ = os.Remove(temporaryName)
+		return fmt.Errorf("close temporary cTrader OAuth token file: %w", err)
+	}
+	if err := os.Rename(temporaryName, path); err != nil {
+		_ = os.Remove(temporaryName)
+		return fmt.Errorf("replace cTrader OAuth token file: %w", err)
+	}
+	return nil
 }
 
 func (c *OAuthClient) exchange(ctx context.Context, method string, values url.Values) (OAuthToken, error) {

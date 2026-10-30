@@ -118,6 +118,24 @@ func DefaultManagerConfig() ManagerConfig {
 		Cache: DefaultCacheConfig(),
 		Stale: DefaultStaleConfig(),
 		Providers: map[string]ProviderConfig{
+			"binance": {
+				Name:             "binance",
+				Enabled:          true, // Public Spot market data requires no API key
+				RateLimit:        RateLimitConfig{RequestsPerMinute: 600},
+				Timeout:          10 * time.Second,
+				MaxRetries:       2,
+				CircuitThreshold: 5,
+				CircuitCooldown:  30 * time.Second,
+			},
+			"ctrader": {
+				Name:             "ctrader",
+				Enabled:          false, // Enable only after cTrader demo data validation
+				RateLimit:        RateLimitConfig{RequestsPerSecond: 5},
+				Timeout:          10 * time.Second,
+				MaxRetries:       1,
+				CircuitThreshold: 3,
+				CircuitCooldown:  30 * time.Second,
+			},
 			"twelvedata": {
 				Name:             "twelvedata",
 				Enabled:          false, // Disabled after switching to Finnhub
@@ -149,10 +167,25 @@ func DefaultManagerConfig() ManagerConfig {
 		Registry: RegistryConfig{
 			DefaultProviders: []string{"finnhub", "fcs"},
 			SymbolRouting: []ProviderPriority{
+				{Symbol: "BTCUSDT", Providers: []string{"binance"}},
+				{Symbol: "BTC/USDT", Providers: []string{"binance"}},
+				{Symbol: "ETHUSDT", Providers: []string{"binance"}},
+				{Symbol: "ETH/USDT", Providers: []string{"binance"}},
+				{Symbol: "BNBUSDT", Providers: []string{"binance"}},
+				{Symbol: "BNB/USDT", Providers: []string{"binance"}},
+				{Symbol: "SOLUSDT", Providers: []string{"binance"}},
+				{Symbol: "SOL/USDT", Providers: []string{"binance"}},
+				{Symbol: "EUR/USD", Providers: []string{"finnhub", "fcs", "twelvedata"}},
+				{Symbol: "GBP/USD", Providers: []string{"finnhub", "fcs", "twelvedata"}},
+				{Symbol: "USD/JPY", Providers: []string{"finnhub", "fcs", "twelvedata"}},
+				{Symbol: "AUD/USD", Providers: []string{"finnhub", "fcs", "twelvedata"}},
+				{Symbol: "USD/CAD", Providers: []string{"finnhub", "fcs", "twelvedata"}},
+				{Symbol: "NZD/USD", Providers: []string{"finnhub", "fcs", "twelvedata"}},
 				{Symbol: "XAG/USD", Providers: []string{"fcs", "twelvedata"}},
 				{Symbol: "BRENT", Providers: []string{"fcs"}},
 				{Symbol: "US100", Providers: []string{"fcs", "twelvedata"}},
-				{Symbol: "XAU/USD", Providers: []string{"twelvedata", "fcs"}},
+				{Symbol: "XAU/USD", Providers: []string{"finnhub", "twelvedata", "fcs"}},
+				{Symbol: "QQQ", Providers: []string{"finnhub", "twelvedata"}},
 			},
 		},
 	}

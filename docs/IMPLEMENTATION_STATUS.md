@@ -617,7 +617,7 @@ Added environment-backed OAuth configuration, authorization URL generation, auth
 
 ## Milestone 55: OAuth CLI workflow
 
-Added `ctrader-oauth-url <state> <scope>` and `ctrader-oauth-exchange <authorization-code> <token-file>`. The exchange writes tokens with mode `0600`, refuses overwrite, and never prints token contents.
+Added `ctrader-oauth-url <state> <scope>`, `ctrader-oauth-exchange <authorization-code> <token-file>`, and the terminal-friendly `ctrader-oauth-bootstrap <token-file>`. Bootstrap listens only on a registered loopback callback for the one-time consent flow; the unattended bot uses the stored refresh token without a redirect. Token files use mode `0600`, refuse overwrite, and refreshed rotating tokens are atomically persisted.
 
 ## Milestone 56: Exness MT5 bridge adapter boundary
 
@@ -649,9 +649,13 @@ Implemented:
 
 No MQL4 EA code, TCP socket dialing, or MetaTrader terminal behavior is embedded. Trade Nation documents only MT4 Web access as the native Mac path; desktop EAs require a supervised Windows VPS node. The bridge connects outbound to Go using mutual authentication; MetaTrader ports are not exposed publicly.
 
-## Current checkpoint: cTrader deferred, MT bridge adapters ready
+## Current checkpoint: cTrader market-data transport ready, execution deferred
 
-The Pepperstone cTrader integration (milestones 21–55) is paused pending Spotware/cTrader Open API application approval. No broker request has been sent and no live capability is enabled.
+The Pepperstone cTrader execution integration (milestones 21–55) remains paused pending Spotware/cTrader Open API application approval. No broker request has been sent and no live capability is enabled. The data-only provider boundary can now be tested independently of that external approval.
+
+The cTrader market-data provider boundary and read-only JSON/TCP transport can
+now be tested independently of broker execution. The transport has not been
+validated against a real Pepperstone demo account in this workspace.
 
 Milestones 56–57 established the Exness MT5 and Trade Nation MT4 adapter boundaries independently, allowing integration work to continue without the cTrader external dependency.
 
@@ -659,9 +663,11 @@ When cTrader approval arrives, resume with:
 
 1. Confirm the application status is active and the registered redirect URI matches `.env`.
 2. Rotate/update the client secret if required, then reload `.env` into the shell.
-3. Run `ctrader-oauth-url local-state accounts`.
-4. Approve the Pepperstone demo account and exchange the callback code with `ctrader-oauth-exchange`.
-5. Use the resulting token to implement application authorization, account-list retrieval, account authorization, and demo snapshot reconciliation.
+3. Run `ctrader-oauth-bootstrap /secure/tradex/ctrader-token.json` on the provisioning host.
+4. Approve the Pepperstone demo account once in the authenticated browser.
+5. Use the resulting token to validate the read-only market-data transport,
+   symbol map, and demo event stream; execution authorization and demo snapshot
+   reconciliation remain separate gates.
 
 ## Milestone 58: MT5 bridge wire protocol and TCP transport
 
@@ -706,10 +712,50 @@ Implemented:
 
 The EA does not make trading decisions. It validates and executes intents from the Go risk engine only. New entries are blocked when the Go heartbeat is stale; protective exits remain available.
 
+## Strategy extension: deterministic triangle breakout v0.1
+
+Implemented:
+
+- versioned triangle pattern contract in `docs/TRIANGLE_PATTERN_SPEC.md`;
+- confirmed-swing geometry detector for ascending, descending, and symmetrical
+  triangles;
+- configurable boundary fitting, slope, height, convergence, and breakout
+  buffer rules;
+- close-through breakout detection with wick-only rejection;
+- optional/default-enabled triangle-breakout path in the live signal engine;
+- unit coverage for classification, convergence, confirmation, and signal
+  emission;
+- triangle evidence exposed to the Hermes MCP as a read-only resource.
+
+This is a research strategy, not evidence of profitability. Breakout targets,
+retests, liquidity context, and walk-forward/holdout validation remain pending.
+
+## Market-data extension: cTrader provider boundary
+
+Implemented:
+
+- account/server-specific cTrader symbol mapping with explicit symbol IDs and price digits;
+- normalized snapshot bid/ask quotes through the central `MarketDataManager` provider interface;
+- cTrader low-plus-delta trendbar conversion into validated OHLC candles;
+- historical candle retrieval and live quote/trendbar subscription seams;
+- deterministic injected-client tests for normalization, ordering, subscription routing, and invalid data;
+- cTrader provider configuration registered disabled-by-default with conservative request pacing;
+- data-only documentation with no order, cancellation, or account-mutation methods.
+
+The repository now includes a read-only JSON/TCP transport with OAuth-token
+account authorization, heartbeat, historical trendbar requests, and live spot
+and trendbar event handling. The opt-in signal CLI integration uses that feed
+and remains disabled by default; it has not yet been validated against a real
+Pepperstone demo account. Symbol metadata discovery, reconnect/resubscribe
+orchestration, and raw-event persistence remain. See
+[CTRADER_MARKETDATA.md](CTRADER_MARKETDATA.md).
+
 ## Next implementation slice
 
-1. Implement the MQL4 EA communication protocol: equivalent framing and validation for the Trade Nation MT4 terminal.
-2. Implement terminal reconciliation and deployment readiness checks for both MT bridges.
-3. Add journal-backed operational evidence and CLI readiness commands for MT5/MT4 (mirroring cTrader milestones 36–40).
-4. When cTrader approval completes, resume with demo account authorization and snapshot reconciliation.
-5. End-to-end integration test: Go service → TCP transport → real Exness MT5 demo terminal.
+1. Validate the opt-in cTrader feed against the Pepperstone demo endpoint after application approval.
+2. Validate the Pepperstone demo symbol map and compare live data against replay/paper fixtures.
+3. Add cTrader raw-event persistence and reconnect/resubscribe orchestration.
+4. Implement the MQL4 EA communication protocol: equivalent framing and validation for the Trade Nation MT4 terminal.
+5. Implement terminal reconciliation and deployment readiness checks for both MT bridges.
+6. Add journal-backed operational evidence and CLI readiness commands for MT5/MT4 (mirroring cTrader milestones 36–40).
+7. End-to-end integration test: Go service → TCP transport → real Exness MT5 demo terminal.

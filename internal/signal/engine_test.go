@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"tradex/internal/domain"
+	"tradex/internal/features"
 	"tradex/internal/feed"
 )
 
@@ -70,6 +72,38 @@ func TestEngineCreation(t *testing.T) {
 	engine, signals := NewEngine(cfg)
 	if engine == nil || signals == nil {
 		t.Fatal("nil engine or signals channel")
+	}
+}
+
+func TestEngineEmitsTriangleBreakoutSignal(t *testing.T) {
+	engine, signals := NewEngine(DefaultEngineConfig())
+	t0 := time.Date(2026, 8, 20, 8, 0, 0, 0, time.UTC)
+	state := &symbolState{
+		barsSeen: 7,
+		candles:  []feed.Candle{{Symbol: "EUR/USD", Interval: "1h", High: 1.125, Low: 1.110, Close: 1.120, Time: t0.Add(7 * time.Hour)}},
+		triangle: &features.TrianglePattern{
+			Kind:            features.TriangleAscending,
+			UpperStartIndex: 0, UpperEndIndex: 4, UpperStartPrice: 110000, UpperEndPrice: 110000,
+			LowerStartIndex: 1, LowerEndIndex: 5, LowerStartPrice: 80000, LowerEndPrice: 100000,
+			LastPivotIndex: 5, DetectedAt: t0,
+		},
+	}
+	candle := state.candles[0]
+	domainCandle := domain.Candle{
+		Source: "test", Symbol: "EUR/USD", Timeframe: time.Hour,
+		OpenTime: candle.Time.Add(-time.Hour), CloseTime: candle.Time,
+		Open: 111000, High: 113000, Low: 111000, Close: 112000, TickCount: 1,
+	}
+	if !engine.evaluateTriangleSignal(state, candle, domainCandle) {
+		t.Fatal("expected triangle breakout signal")
+	}
+	select {
+	case signal := <-signals:
+		if signal.Direction != "BUY" || signal.Strategy != "Triangle Breakout: ASCENDING_TRIANGLE" {
+			t.Fatalf("unexpected triangle signal: %+v", signal)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("triangle signal was not emitted")
 	}
 }
 

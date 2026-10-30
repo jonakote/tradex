@@ -63,12 +63,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "tradex: exchange cTrader authorization code: %v\n", err)
 			return 1
 		}
-		encoded, err := json.MarshalIndent(token, "", "  ")
-		if err != nil {
-			fmt.Fprintf(stderr, "tradex: encode cTrader token: %v\n", err)
-			return 1
-		}
-		encoded = append(encoded, '\n')
 		if _, err := os.Stat(args[2]); err == nil {
 			fmt.Fprintln(stderr, "tradex: cTrader token output already exists")
 			return 1
@@ -76,12 +70,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "tradex: inspect cTrader token output: %v\n", err)
 			return 1
 		}
-		if err := os.WriteFile(args[2], encoded, 0o600); err != nil {
+		if err := ctrader.WriteOAuthTokenFile(args[2], token); err != nil {
 			fmt.Fprintf(stderr, "tradex: write cTrader token: %v\n", err)
 			return 1
 		}
 		fmt.Fprintln(stdout, "cTrader OAuth token stored")
 		return 0
+	}
+	if len(args) == 2 && args[0] == "ctrader-oauth-bootstrap" {
+		return runCTraderOAuthBootstrap(args[1], stdout, stderr)
 	}
 	if len(args) == 3 && args[0] == "ctrader-evidence" {
 		events, err := journal.ReadAll(args[1])
@@ -734,6 +731,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stderr, "  tradex version")
 	fmt.Fprintln(stderr, "  tradex ctrader-oauth-url <state> <scope>")
 	fmt.Fprintln(stderr, "  tradex ctrader-oauth-exchange <authorization-code> <token-file>")
+	fmt.Fprintln(stderr, "  tradex ctrader-oauth-bootstrap <token-file>")
 	fmt.Fprintln(stderr, "  tradex ctrader-evidence <audit.jsonl> <evidence.json>")
 	fmt.Fprintln(stderr, "  tradex ctrader-readiness <readiness.json> <report.json>")
 	fmt.Fprintln(stderr, "  tradex ctrader-artifact-create <readiness.json> <manifest-sha256> <evidence-sha256> <key-file> <artifact.json>")

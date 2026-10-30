@@ -1,6 +1,6 @@
 # Tradex
 
-Tradex is a planned Go trading-research and automation system for major USD, EUR, GBP, JPY and AUD FX pairs plus XAU/USD and XAG/USD. It will research price action, Trades by Sci's ICC, ICT, SMC, CRT and liquidity rules, targeting Pepperstone, Exness and Trade Nation with optional TradingView validation. The project begins in research/paper-trading mode; live execution is deliberately gated behind statistical, operational, and risk controls.
+Tradex is a planned Go trading-research and automation system for major USD, EUR, GBP, JPY and AUD FX pairs plus XAU/USD and XAG/USD. It will research price action, triangle breakouts, Trades by Sci's ICC, ICT, SMC, CRT and liquidity rules, targeting Pepperstone, Exness and Trade Nation with optional TradingView validation. The project begins in research/paper-trading mode; live execution is deliberately gated behind statistical, operational, and risk controls.
 
 Start with the [draft design and research plan](docs/TRADING_BOT_PLAN.md).
 
@@ -131,6 +131,24 @@ Shared-account approvals also reserve gross risk in both instrument currencies o
 
 The included fixtures are engineering tests, not historical performance evidence.
 
-The Pepperstone cTrader adapter boundary is documented in [CTRADER_ADAPTER.md](docs/CTRADER_ADAPTER.md). It requires explicit promotion approval and successful reconciliation before order mutations; a production cTrader transport is not enabled yet.
+Hermes or another MCP client can connect to the research-only stdio server:
+
+```sh
+go build -o ./bin/tradex-mcp ./cmd/tradex-mcp
+```
+
+See [the Hermes MCP connection guide](docs/HERMES_MCP.md) and the [specification alignment](docs/HERMES_SPEC_ALIGNMENT.md). The server exposes
+status, artifact validation, immutable manifest creation, deterministic paper
+replay, and self-verifying report export; it does not expose live order
+placement.
+
+The Pepperstone cTrader adapter boundary is documented in [CTRADER_ADAPTER.md](docs/CTRADER_ADAPTER.md). It requires explicit promotion approval and successful reconciliation before order mutations; a cTrader execution transport is not enabled.
+
+The data-only cTrader market-data provider now supports normalized quotes,
+historical trendbars, and live quote/bar subscriptions through the central
+manager, with a read-only JSON/TCP transport behind the provider boundary. See
+[CTRADER_MARKETDATA.md](docs/CTRADER_MARKETDATA.md). It is opt-in and disabled
+by default until the demo account, token flow, and broker-specific symbol map
+are validated.
 
 > This repository is for engineering and research, not a promise of returns or financial advice. Leveraged trading can lose more than the amount initially funded.

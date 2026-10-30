@@ -12,25 +12,7 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
-
-  postgres:
-    image: postgres:16-alpine
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-tradex}
-      POSTGRES_USER: ${POSTGRES_USER:-tradex}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tradex_dev}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tradex}"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
-
+    
   tradex:
     build:
       context: .
@@ -48,8 +30,6 @@ services:
       POSTGRES_URL: postgres://${POSTGRES_USER:-tradex}:${POSTGRES_PASSWORD:-tradex_dev}@postgres:5432/${POSTGRES_DB:-tradex}?sslmode=disable
     depends_on:
       redis:
-        condition: service_healthy
-      postgres:
         condition: service_healthy
     restart: unless-stopped
 

@@ -8,6 +8,7 @@ Support these providers behind a common abstraction:
 
 - Finnhub
 - Twelve Data
+- Binance Spot (public crypto market data)
 - Alpha Vantage
 - Polygon/Massive
 - Yahoo Finance
@@ -15,6 +16,8 @@ Support these providers behind a common abstraction:
 Do not allow trading strategies or bot components to call providers directly.
 
 All market-data requests must go through a central `MarketDataManager`.
+
+The Binance adapter uses the official [Binance Developer Documentation](https://developers.binance.com/en/docs/introduction), specifically the public [Spot REST API](https://developers.binance.com/en/docs/products/spot/rest-api). It reads completed klines and book-ticker quotes only; no order endpoint or trading credential is used.
 
 ---
 
@@ -201,10 +204,10 @@ EURUSD:
   secondary: TwelveData
   tertiary: Polygon
 
-BTCUSD:
-  primary: Finnhub
-  secondary: TwelveData
-  tertiary: Yahoo
+BTCUSDT:
+  primary: Binance
+  secondary: Finnhub
+  tertiary: TwelveData
 ```
 
 Do not blindly fail over on every error.

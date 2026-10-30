@@ -11,13 +11,17 @@ import (
 	"time"
 
 	"tradex/internal/feed"
+	"tradex/internal/marketdata/ctraderfeed"
 	sig "tradex/internal/signal"
 )
 
 // SignalsConfig is the JSON configuration for the signals command.
 type SignalsConfig struct {
+	Binance      *feed.BinanceConfig    `json:"binance,omitempty"`
 	TwelveData   *feed.TwelveDataConfig `json:"twelve_data,omitempty"`
 	FCS          *feed.FCSConfig        `json:"fcs,omitempty"`
+	Finnhub      *feed.FinnhubConfig    `json:"finnhub,omitempty"`
+	CTrader      *ctraderfeed.Config    `json:"ctrader,omitempty"`
 	Webhook      *feed.WebhookConfig    `json:"webhook,omitempty"`
 	Engine       *sig.EngineConfig      `json:"engine,omitempty"`
 	PollInterval string                 `json:"poll_interval,omitempty"` // e.g. "5m", "15m"
@@ -41,12 +45,32 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// Check for API key from env if not in config
+	// Binance public market-data endpoints do not require an API key. If one is
+	// supplied, pass it through as the standard Binance API-key header.
+	if cfg.Binance != nil && cfg.Binance.APIKey == "" {
+		cfg.Binance.APIKey = os.Getenv("BINANCE_API_KEY")
+	}
+
+	// Check for API keys from env if not in config
 	if cfg.TwelveData != nil && cfg.TwelveData.APIKey == "" {
 		cfg.TwelveData.APIKey = os.Getenv("TWELVE_DATA_API_KEY")
 	}
 	if cfg.FCS != nil && cfg.FCS.APIKey == "" {
 		cfg.FCS.APIKey = os.Getenv("FCS_API_KEY")
+	}
+	if cfg.Finnhub != nil && cfg.Finnhub.APIKey == "" {
+		cfg.Finnhub.APIKey = os.Getenv("FINNHUB_API_KEY")
+	}
+	if cfg.CTrader != nil {
+		if cfg.CTrader.AccountID == "" {
+			cfg.CTrader.AccountID = os.Getenv("CTRADER_ACCOUNT_ID")
+		}
+		if cfg.CTrader.Environment == "" {
+			cfg.CTrader.Environment = os.Getenv("CTRADER_ENVIRONMENT")
+		}
+		if cfg.CTrader.TokenFile == "" {
+			cfg.CTrader.TokenFile = os.Getenv("CTRADER_TOKEN_FILE")
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -66,6 +90,7 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 	if cfg.Engine != nil {
 		engineCfg = *cfg.Engine
 	}
+	engineCfg.Verbose = engineCfg.Verbose || os.Getenv("TRADEX_VERBOSE") != ""
 	engine, signals := sig.NewEngine(engineCfg)
 
 	// Print header
@@ -73,6 +98,93 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "  TRADEX LIVE SIGNAL MONITOR")
 	fmt.Fprintln(stdout, "═══════════════════════════════════════════════════")
 	fmt.Fprintf(stdout, "  Started:  %s\n", time.Now().Format("2006-01-02 15:04 UTC"))
+
+	// Start optional direct cTrader Open API feed. It is read-only and opt-in;
+	// order tools are not part of this client or signal command.
+	if cfg.CTrader != nil {
+		if cfg.CTrader.Environment == "" {
+			cfg.CTrader.Environment = "demo"
+		}
+		ctraderFeed, err := ctraderfeed.New(*cfg.CTrader, time.Now)
+		if err != nil {
+			fmt.Fprintf(stderr, "tradex signals: cTrader feed: %v\n", err)
+			return 1
+		}
+		defer ctraderFeed.Close()
+
+		cTraderPollInterval := pollIntervalOrDefault(cfg.PollInterval, 1*time.Minute)
+		fmt.Fprintf(stdout, "  cTrader:  %d symbols (%s, poll every %s)\n",
+			len(cfg.CTrader.Symbols), cfg.CTrader.Interval, cTraderPollInterval)
+		go func() {
+			poll := func() {
+				start := time.Now()
+				candles, err := ctraderFeed.FetchAllSymbols(ctx)
+				if err != nil && ctx.Err() == nil {
+					fmt.Fprintf(stdout, "%s [ctrader-poll] failed after %s: %v\n",
+						time.Now().UTC().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond), err)
+					return
+				}
+				fmt.Fprintf(stdout, "%s [ctrader-poll] ok in %s: %d candles\n",
+					time.Now().UTC().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond), len(candles))
+				for _, candle := range candles {
+					engine.ProcessCandle(candle)
+				}
+			}
+			poll()
+			ticker := time.NewTicker(cTraderPollInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					poll()
+				}
+			}
+		}()
+	}
+
+	// Start Binance public Spot kline poller. Only completed candles are
+	// forwarded, so an in-progress bar cannot repaint a signal.
+	if cfg.Binance != nil {
+		binanceClient, err := feed.NewBinanceClient(*cfg.Binance)
+		if err != nil {
+			fmt.Fprintf(stderr, "tradex signals: binance client: %v\n", err)
+			return 1
+		}
+
+		binancePollInterval := pollIntervalOrDefault(cfg.PollInterval, 5*time.Minute)
+		fmt.Fprintf(stdout, "  Binance:  %d symbols (%s, poll every %s)\n",
+			len(cfg.Binance.Symbols), cfg.Binance.Interval, binancePollInterval)
+
+		go func() {
+			poll := func() {
+				start := time.Now()
+				candles, err := binanceClient.FetchAllSymbols(ctx)
+				if err != nil && ctx.Err() == nil {
+					fmt.Fprintf(stdout, "%s [binance-poll] failed after %s: %v\n",
+						time.Now().UTC().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond), err)
+					return
+				}
+				fmt.Fprintf(stdout, "%s [binance-poll] ok in %s: %d candles\n",
+					time.Now().UTC().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond), len(candles))
+				for _, candle := range candles {
+					engine.ProcessCandle(candle)
+				}
+			}
+			poll()
+			ticker := time.NewTicker(binancePollInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					poll()
+				}
+			}
+		}()
+	}
 
 	// Start Twelve Data poller
 	if cfg.TwelveData != nil && cfg.TwelveData.APIKey != "" {
@@ -174,6 +286,57 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 		// Only show message if key not set at all
 	}
 
+	// Start Finnhub poller (forex via OANDA, stocks/ETFs)
+	if cfg.Finnhub != nil && cfg.Finnhub.APIKey != "" {
+		finnhubClient, err := feed.NewFinnhubClient(*cfg.Finnhub)
+		if err != nil {
+			fmt.Fprintf(stderr, "tradex signals: finnhub client: %v\n", err)
+			return 1
+		}
+
+		// Finnhub free tier allows 60 calls/min — poll on the shared interval
+		finnhubPollInterval := pollIntervalOrDefault(cfg.PollInterval, 5*time.Minute)
+
+		fmt.Fprintf(stdout, "  Finnhub:  %d symbols (%s, poll every %s)\n",
+			len(cfg.Finnhub.Symbols), cfg.Finnhub.Interval, finnhubPollInterval)
+
+		// Finnhub polling goroutine
+		go func() {
+			logPoll := func(outcome string, n int, elapsed time.Duration, err error) {
+				if err != nil {
+					fmt.Fprintf(stdout, "%s [finnhub-poll] %s after %s: %v\n",
+						time.Now().UTC().Format(time.RFC3339Nano), outcome, elapsed.Round(time.Millisecond), err)
+					return
+				}
+				fmt.Fprintf(stdout, "%s [finnhub-poll] %s in %s: %d candles\n",
+					time.Now().UTC().Format(time.RFC3339Nano), outcome, elapsed.Round(time.Millisecond), n)
+			}
+			poll := func() {
+				start := time.Now()
+				candles, err := finnhubClient.FetchAllSymbols(ctx)
+				if err != nil && ctx.Err() == nil {
+					logPoll("poll failed", 0, time.Since(start), err)
+					return
+				}
+				logPoll("poll ok", len(candles), time.Since(start), nil)
+				for _, c := range candles {
+					engine.ProcessCandle(c)
+				}
+			}
+			poll()
+			ticker := time.NewTicker(finnhubPollInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					poll()
+				}
+			}
+		}()
+	}
+
 	// Start webhook receiver
 	if cfg.Webhook != nil {
 		receiver, alertsCh, err := feed.NewWebhookReceiver(*cfg.Webhook)
@@ -263,12 +426,21 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 
 func defaultSignalsConfig() SignalsConfig {
 	return SignalsConfig{
+		Binance: &feed.BinanceConfig{
+			Symbols:  feed.DefaultBinanceSymbols(),
+			Interval: "1h",
+			Limit:    100,
+		},
 		TwelveData: &feed.TwelveDataConfig{
 			Symbols:  feed.DefaultSymbols(),
 			Interval: "1h",
 		},
 		FCS: &feed.FCSConfig{
 			Symbols:  feed.DefaultFCSSymbols(),
+			Interval: "1h",
+		},
+		Finnhub: &feed.FinnhubConfig{
+			Symbols:  feed.DefaultFinnhubSymbols(),
 			Interval: "1h",
 		},
 		Webhook: &feed.WebhookConfig{
@@ -284,4 +456,16 @@ func webhookPath(cfg *feed.WebhookConfig) string {
 		return cfg.Path
 	}
 	return "/webhook"
+}
+
+// pollIntervalOrDefault parses s as a duration, falling back to def when
+// empty or invalid.
+func pollIntervalOrDefault(s string, def time.Duration) time.Duration {
+	if s == "" {
+		return def
+	}
+	if d, err := time.ParseDuration(s); err == nil && d > 0 {
+		return d
+	}
+	return def
 }

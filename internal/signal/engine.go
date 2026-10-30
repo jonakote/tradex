@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"tradex/internal/domain"
-	"tradex/internal/feed"
 	"tradex/internal/features"
+	"tradex/internal/feed"
 )
 
 // Signal represents a trade signal ready for manual execution.
@@ -79,28 +79,40 @@ type EngineConfig struct {
 	SwingRight int `json:"swing_right"`
 	// Signal expiry duration
 	SignalExpiry time.Duration `json:"signal_expiry"`
+	// Verbose enables per-candle debug logging (structure breaks, trend state)
+	Verbose bool `json:"verbose"`
+	// EnableTriangle enables the deterministic triangle-breakout research strategy.
+	EnableTriangle bool                    `json:"enable_triangle"`
+	Triangle       features.TriangleConfig `json:"triangle"`
+	// TriangleBreakoutBufferTicks is an additional close-through buffer in price ticks.
+	TriangleBreakoutBufferTicks int64 `json:"triangle_breakout_buffer_ticks"`
 }
 
 // DefaultEngineConfig returns sensible defaults.
 func DefaultEngineConfig() EngineConfig {
 	return EngineConfig{
-		RiskFraction:  0.0025,
-		AccountEquity: 10000.0,
-		MinRewardRisk: 2.0,
-		SwingLeft:     3,
-		SwingRight:    2,
+		RiskFraction:   0.0025,
+		AccountEquity:  10000.0,
+		MinRewardRisk:  2.0,
+		SwingLeft:      3,
+		SwingRight:     2,
 		SignalExpiry:   4 * time.Hour,
+		EnableTriangle: true,
+		Triangle:       features.DefaultTriangleConfig(),
 	}
 }
 
 // symbolState tracks the analysis state for a single symbol/timeframe pair.
 type symbolState struct {
-	detector  *features.SwingDetector
-	structure *features.StructureDetector
-	swings    []features.Swing
-	trend     features.Trend
-	lastBreak *features.StructureBreak
-	candles   []feed.Candle
+	detector         *features.SwingDetector
+	structure        *features.StructureDetector
+	swings           []features.Swing
+	trend            features.Trend
+	lastBreak        *features.StructureBreak
+	candles          []feed.Candle
+	barsSeen         int
+	triangle         *features.TrianglePattern
+	triangleSignaled bool
 }
 
 // Engine processes candles and emits trade signals.
@@ -112,6 +124,12 @@ type Engine struct {
 
 // NewEngine creates a signal engine.
 func NewEngine(cfg EngineConfig) (*Engine, chan Signal) {
+	if cfg.EnableTriangle && cfg.Triangle.MinTouches == 0 {
+		cfg.Triangle = features.DefaultTriangleConfig()
+	}
+	if cfg.TriangleBreakoutBufferTicks < 0 {
+		cfg.TriangleBreakoutBufferTicks = 0
+	}
 	ch := make(chan Signal, 32)
 	return &Engine{
 		config: cfg,
@@ -129,6 +147,7 @@ func (e *Engine) ProcessCandle(candle feed.Candle) {
 	}
 
 	state.candles = append(state.candles, candle)
+	state.barsSeen++
 	if len(state.candles) > 100 {
 		state.candles = state.candles[len(state.candles)-100:]
 	}
@@ -159,6 +178,15 @@ func (e *Engine) ProcessCandle(candle feed.Candle) {
 		state.lastBreak = &brk
 	}
 
+	if e.config.EnableTriangle {
+		if pattern, ok := features.DetectTriangle(state.swings, e.config.Triangle); ok {
+			state.triangle = &pattern
+		}
+		if e.evaluateTriangleSignal(state, candle, *domCandle) {
+			return
+		}
+	}
+
 	// Generate signal from structure break + trend alignment
 	e.evaluateSignal(state, candle)
 }
@@ -179,11 +207,78 @@ func (e *Engine) getOrCreateState(key string, candle feed.Candle) *symbolState {
 	return state
 }
 
+func (e *Engine) evaluateTriangleSignal(state *symbolState, candle feed.Candle, domCandle domain.Candle) bool {
+	pattern := state.triangle
+	if pattern == nil || state.triangleSignaled || !candle.Time.After(pattern.DetectedAt) {
+		return false
+	}
+
+	direction, broke := pattern.Breakout(domCandle.Close, state.barsSeen-1, domain.Price(e.config.TriangleBreakoutBufferTicks))
+	if !broke {
+		return false
+	}
+
+	scale := priceScale(candle.Symbol)
+	if scale <= 0 {
+		return false
+	}
+	entry := candle.Close
+	boundary := float64(pattern.LowerBoundaryAt(state.barsSeen-1)) / float64(scale)
+	var stopLoss, takeProfit float64
+	var signalDirection string
+	switch direction {
+	case features.BreakBullish:
+		signalDirection = "BUY"
+		stopLoss = math.Min(findRecentLow(state.candles), boundary)
+		if stopLoss >= entry {
+			return false
+		}
+		takeProfit = entry + (entry-stopLoss)*e.config.MinRewardRisk
+	case features.BreakBearish:
+		signalDirection = "SELL"
+		boundary = float64(pattern.UpperBoundaryAt(state.barsSeen-1)) / float64(scale)
+		stopLoss = math.Max(findRecentHigh(state.candles), boundary)
+		if stopLoss <= entry {
+			return false
+		}
+		takeProfit = entry - (stopLoss-entry)*e.config.MinRewardRisk
+	default:
+		return false
+	}
+
+	risk := math.Abs(entry - stopLoss)
+	if risk <= 0 || math.Abs(takeProfit-entry)/risk < e.config.MinRewardRisk {
+		return false
+	}
+	state.triangleSignaled = true
+	select {
+	case e.output <- Signal{
+		Time:       candle.Time,
+		Symbol:     candle.Symbol,
+		Direction:  signalDirection,
+		Entry:      entry,
+		StopLoss:   stopLoss,
+		TakeProfit: takeProfit,
+		RiskReward: math.Abs(takeProfit-entry) / risk,
+		Lots:       e.calculateLots(candle.Symbol, risk),
+		Timeframe:  candle.Interval,
+		Session:    detectSession(candle.Time),
+		Strategy:   "Triangle Breakout: " + string(pattern.Kind),
+		Reason:     fmt.Sprintf("confirmed %s close broke the projected triangle boundary", pattern.Kind),
+		Expires:    candle.Time.Add(e.config.SignalExpiry),
+	}:
+	default:
+	}
+	return true
+}
+
 func (e *Engine) evaluateSignal(state *symbolState, candle feed.Candle) {
 	if state.lastBreak == nil || state.trend == features.TrendNeutral {
 		return
 	}
-	fmt.Printf("DEBUG: lastBreak=%+v trend=%s candles=%d\n", state.lastBreak, state.trend, len(state.candles))
+	if e.config.Verbose {
+		fmt.Printf("DEBUG: lastBreak=%+v trend=%s candles=%d\n", state.lastBreak, state.trend, len(state.candles))
+	}
 
 	// Only signal when break direction aligns with trend
 	brk := state.lastBreak
