@@ -1,0 +1,28 @@
+{
+  "binance": {
+    "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT"],
+    "interval": "4h",
+    "limit": 300
+  },
+  "poll_interval": "2m",
+  "engine": {
+    "risk_fraction": 0.0025,
+    "account_equity": 10000,
+    "min_reward_risk": 1.5,
+    "swing_left": 3,
+    "swing_right": 2,
+    "signal_expiry": 14400000000000,
+    "max_signal_age_bars": 2,
+    "enable_triangle": false,
+    "enable_crt": true,
+    "crt": {
+      "min_range_ticks": 0,
+      "min_purge_ticks": 1,
+      "max_purge_bps": 5000,
+      "min_reclaim_bps": 2500,
+      "entry_bps": 5000,
+      "stop_buffer_ticks": 2,
+      "min_reward_risk_bps": 15000
+    }
+  }
+}

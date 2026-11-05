@@ -49,7 +49,7 @@ func (p *BinanceProvider) GetCandles(ctx context.Context, req manager.CandleRequ
 		candles = append(candles, manager.Candle{
 			Symbol:    fc.Symbol,
 			Timeframe: req.Timeframe,
-			OpenTime:  fc.Time,
+			OpenTime:  fc.OpenTime,
 			Open:      fc.Open,
 			High:      fc.High,
 			Low:       fc.Low,

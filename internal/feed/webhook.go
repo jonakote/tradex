@@ -94,15 +94,20 @@ func (a WebhookAlert) ToCandle() (Candle, error) {
 			t = parsed.UTC()
 		}
 	}
+	// TradingView's `time` is the bar's open, so a candle_close alert still
+	// carries the open instant.
+	barOpen, barClose := resolveBarTimes(t, a.Interval)
 	return Candle{
-		Symbol:   a.Symbol,
-		Interval: a.Interval,
-		Open:     a.Open,
-		High:     a.High,
-		Low:      a.Low,
-		Close:    a.Close,
-		Volume:   a.Volume,
-		Time:     t,
+		Symbol:    a.Symbol,
+		Interval:  a.Interval,
+		Open:      a.Open,
+		High:      a.High,
+		Low:       a.Low,
+		Close:     a.Close,
+		Volume:    a.Volume,
+		Time:      barOpen,
+		OpenTime:  barOpen,
+		CloseTime: barClose,
 	}, nil
 }
 

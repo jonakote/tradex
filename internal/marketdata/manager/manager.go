@@ -106,14 +106,14 @@ type Manager struct {
 
 // ManagerStats tracks operational metrics.
 type ManagerStats struct {
-	CacheHits       int64 `json:"cache_hits"`
-	CacheMisses     int64 `json:"cache_misses"`
-	DedupShared     int64 `json:"dedup_shared"`
-	ProviderCalls   int64 `json:"provider_calls"`
-	ProviderErrors  int64 `json:"provider_errors"`
-	RateLimited     int64 `json:"rate_limited"`
-	CircuitOpen     int64 `json:"circuit_open"`
-	Failovers       int64 `json:"failovers"`
+	CacheHits      int64 `json:"cache_hits"`
+	CacheMisses    int64 `json:"cache_misses"`
+	DedupShared    int64 `json:"dedup_shared"`
+	ProviderCalls  int64 `json:"provider_calls"`
+	ProviderErrors int64 `json:"provider_errors"`
+	RateLimited    int64 `json:"rate_limited"`
+	CircuitOpen    int64 `json:"circuit_open"`
+	Failovers      int64 `json:"failovers"`
 }
 
 // NewManager creates a MarketDataManager with all layers wired together.
@@ -407,8 +407,8 @@ func (m *Manager) ProviderStatus() []ProviderStatusEntry {
 	for _, provider := range m.registry.All() {
 		name := provider.Name()
 		entry := ProviderStatusEntry{
-			Name:   name,
-			Quota:  provider.RemainingQuota(),
+			Name:    name,
+			Quota:   provider.RemainingQuota(),
 			Circuit: CircuitClosed,
 		}
 		if circuit, ok := m.circuits[name]; ok {

@@ -23,8 +23,8 @@ func TestTwelveDataProviderSupports(t *testing.T) {
 	}
 
 	tests := []struct {
-		inst    manager.Instrument
-		expect  bool
+		inst   manager.Instrument
+		expect bool
 	}{
 		{manager.Instrument{Symbol: "EUR/USD", Type: manager.InstrumentForex}, true},
 		{manager.Instrument{Symbol: "XAU/USD", Type: manager.InstrumentMetal}, true},

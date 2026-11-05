@@ -382,7 +382,7 @@ func (s *slowFakeProvider) GetCandles(ctx context.Context, req CandleRequest) ([
 	return s.fakeProvider.GetCandles(ctx, req)
 }
 
-func (s *slowFakeProvider) Name() string            { return s.fakeProvider.Name() }
+func (s *slowFakeProvider) Name() string               { return s.fakeProvider.Name() }
 func (s *slowFakeProvider) Supports(i Instrument) bool { return s.fakeProvider.Supports(i) }
 func (s *slowFakeProvider) GetQuote(ctx context.Context, req QuoteRequest) (Quote, error) {
 	return s.fakeProvider.GetQuote(ctx, req)

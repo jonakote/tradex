@@ -257,15 +257,21 @@ func parseBinanceKline(symbol, interval string, row []json.RawMessage) (Candle, 
 			return Candle{}, time.Time{}, err
 		}
 	}
+	// Binance timestamps a kline by its open and reports a close one
+	// millisecond early (23:59:59.999 for a bar owning up to 24:00:00), so
+	// the owned interval is derived from the open instead.
+	open, close := resolveBarTimes(time.UnixMilli(openMillis), interval)
 	candle := Candle{
-		Symbol:   symbol,
-		Interval: interval,
-		Open:     values[0],
-		High:     values[1],
-		Low:      values[2],
-		Close:    values[3],
-		Volume:   values[4],
-		Time:     time.UnixMilli(openMillis).UTC(),
+		Symbol:    symbol,
+		Interval:  interval,
+		Open:      values[0],
+		High:      values[1],
+		Low:       values[2],
+		Close:     values[3],
+		Volume:    values[4],
+		Time:      open,
+		OpenTime:  open,
+		CloseTime: close,
 	}
 	if err := candle.Validate(); err != nil {
 		return Candle{}, time.Time{}, err

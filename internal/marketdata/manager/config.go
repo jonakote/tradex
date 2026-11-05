@@ -38,14 +38,14 @@ func (c ProviderConfig) Validate() error {
 
 // CacheConfig defines TTL settings for different data types.
 type CacheConfig struct {
-	QuoteTTL    time.Duration `json:"quote_ttl"`
-	Candle1mTTL time.Duration `json:"candle_1m_ttl"`
-	Candle5mTTL time.Duration `json:"candle_5m_ttl"`
+	QuoteTTL     time.Duration `json:"quote_ttl"`
+	Candle1mTTL  time.Duration `json:"candle_1m_ttl"`
+	Candle5mTTL  time.Duration `json:"candle_5m_ttl"`
 	Candle15mTTL time.Duration `json:"candle_15m_ttl"`
-	Candle1hTTL time.Duration `json:"candle_1h_ttl"`
-	Candle4hTTL time.Duration `json:"candle_4h_ttl"`
-	Candle1dTTL time.Duration `json:"candle_1d_ttl"`
-	SymbolsTTL  time.Duration `json:"symbols_ttl"`
+	Candle1hTTL  time.Duration `json:"candle_1h_ttl"`
+	Candle4hTTL  time.Duration `json:"candle_4h_ttl"`
+	Candle1dTTL  time.Duration `json:"candle_1d_ttl"`
+	SymbolsTTL   time.Duration `json:"symbols_ttl"`
 }
 
 // DefaultCacheConfig returns recommended TTL defaults.
@@ -86,11 +86,11 @@ func (c CacheConfig) TTLForTimeframe(tf Timeframe) time.Duration {
 
 // StaleConfig defines maximum acceptable age before data is considered stale.
 type StaleConfig struct {
-	MaxQuoteAge    time.Duration `json:"max_quote_age"`
-	MaxCandle1mAge time.Duration `json:"max_candle_1m_age"`
-	MaxCandle5mAge time.Duration `json:"max_candle_5m_age"`
+	MaxQuoteAge     time.Duration `json:"max_quote_age"`
+	MaxCandle1mAge  time.Duration `json:"max_candle_1m_age"`
+	MaxCandle5mAge  time.Duration `json:"max_candle_5m_age"`
 	MaxCandle15mAge time.Duration `json:"max_candle_15m_age"`
-	MaxCandle1hAge time.Duration `json:"max_candle_1h_age"`
+	MaxCandle1hAge  time.Duration `json:"max_candle_1h_age"`
 }
 
 // DefaultStaleConfig returns recommended staleness thresholds.
@@ -106,10 +106,10 @@ func DefaultStaleConfig() StaleConfig {
 
 // ManagerConfig is the top-level configuration for the MarketDataManager.
 type ManagerConfig struct {
-	Cache     CacheConfig              `json:"cache"`
-	Stale     StaleConfig              `json:"stale"`
+	Cache     CacheConfig               `json:"cache"`
+	Stale     StaleConfig               `json:"stale"`
 	Providers map[string]ProviderConfig `json:"providers"`
-	Registry  RegistryConfig           `json:"registry"`
+	Registry  RegistryConfig            `json:"registry"`
 }
 
 // DefaultManagerConfig returns a working default configuration.

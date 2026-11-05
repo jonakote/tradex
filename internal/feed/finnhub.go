@@ -319,15 +319,19 @@ func (c *FinnhubClient) parseCandles(symbol, interval string, data finnhubCandle
 		if i >= len(data.O) || i >= len(data.H) || i >= len(data.L) || i >= len(data.C) {
 			continue
 		}
+		// Finnhub's `t` is the bar's open.
+		barOpen, barClose := resolveBarTimes(time.Unix(data.T[i], 0), interval)
 		candle := Candle{
-			Symbol:   symbol,
-			Interval: interval,
-			Open:     data.O[i],
-			High:     data.H[i],
-			Low:      data.L[i],
-			Close:    data.C[i],
-			Volume:   volAt(data.V, i),
-			Time:     time.Unix(data.T[i], 0).UTC(),
+			Symbol:    symbol,
+			Interval:  interval,
+			Open:      data.O[i],
+			High:      data.H[i],
+			Low:       data.L[i],
+			Close:     data.C[i],
+			Volume:    volAt(data.V, i),
+			Time:      barOpen,
+			OpenTime:  barOpen,
+			CloseTime: barClose,
 		}
 		if err := candle.Validate(); err == nil {
 			candles = append(candles, candle)

@@ -28,8 +28,8 @@ type RateLimiter struct {
 	cooldownUntil time.Time
 
 	// Tracking
-	totalRequests     int64
-	rateLimitedCount  int64
+	totalRequests    int64
+	rateLimitedCount int64
 }
 
 // NewRateLimiter creates a rate limiter for a single provider.

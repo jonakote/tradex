@@ -233,14 +233,16 @@ func (f *Feed) fetchCandles(ctx context.Context, symbol Symbol) ([]feed.Candle, 
 			continue
 		}
 		converted = append(converted, feed.Candle{
-			Symbol:   symbol.Symbol,
-			Interval: f.config.Interval,
-			Open:     candle.Open,
-			High:     candle.High,
-			Low:      candle.Low,
-			Close:    candle.Close,
-			Volume:   candle.Volume,
-			Time:     candle.OpenTime,
+			Symbol:    symbol.Symbol,
+			Interval:  f.config.Interval,
+			Open:      candle.Open,
+			High:      candle.High,
+			Low:       candle.Low,
+			Close:     candle.Close,
+			Volume:    candle.Volume,
+			Time:      candle.OpenTime.UTC(),
+			OpenTime:  candle.OpenTime.UTC(),
+			CloseTime: candle.OpenTime.UTC().Add(feed.IntervalDuration(f.config.Interval)),
 		})
 		if candle.OpenTime.After(latest) {
 			latest = candle.OpenTime

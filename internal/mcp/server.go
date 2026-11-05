@@ -706,6 +706,8 @@ func (s *Server) resources() []map[string]any {
 		{"uri": "tradex://docs/TRADING_BOT_PLAN.md", "name": "Trading bot plan", "description": "Strategy, risk, execution, and research plan", "mimeType": "text/markdown"},
 		{"uri": "tradex://docs/IMPLEMENTATION_STATUS.md", "name": "Implementation status", "description": "Implemented milestones and verification status", "mimeType": "text/markdown"},
 		{"uri": "tradex://docs/TRIANGLE_PATTERN_SPEC.md", "name": "Triangle pattern specification", "description": "Versioned triangle geometry and breakout research contract", "mimeType": "text/markdown"},
+		{"uri": "tradex://docs/CANDLE_RANGE_SPEC.md", "name": "Candle Range Theory specification", "description": "Versioned CRT purge contract, determinism rules, and measured baseline", "mimeType": "text/markdown"},
+		{"uri": "tradex://docs/MARKET_DATA_SOURCES.md", "name": "Market data sources", "description": "Verified source properties, known vendor defects, and request costs", "mimeType": "text/markdown"},
 	}
 	if s.specRoot == "" {
 		return resources
@@ -742,6 +744,8 @@ func (s *Server) readResource(params json.RawMessage) (map[string]any, *callErro
 		"tradex://docs/TRADING_BOT_PLAN.md":      "docs/TRADING_BOT_PLAN.md",
 		"tradex://docs/IMPLEMENTATION_STATUS.md": "docs/IMPLEMENTATION_STATUS.md",
 		"tradex://docs/TRIANGLE_PATTERN_SPEC.md": "docs/TRIANGLE_PATTERN_SPEC.md",
+		"tradex://docs/CANDLE_RANGE_SPEC.md":     "docs/CANDLE_RANGE_SPEC.md",
+		"tradex://docs/MARKET_DATA_SOURCES.md":   "docs/MARKET_DATA_SOURCES.md",
 	}
 	var path string
 	var err error

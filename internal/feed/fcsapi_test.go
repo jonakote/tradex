@@ -106,10 +106,10 @@ func TestFCSDeduplication(t *testing.T) {
 	defer server.Close()
 
 	client, _ := NewFCSClient(FCSConfig{
-		APIKey:  "key",
-		Symbols: []string{"BRENT"},
+		APIKey:   "key",
+		Symbols:  []string{"BRENT"},
 		Interval: "1h",
-		BaseURL: server.URL,
+		BaseURL:  server.URL,
 	})
 
 	candles, _ := client.FetchCandles(context.Background(), "BRENT")
@@ -131,10 +131,10 @@ func TestFCSAPIError(t *testing.T) {
 	defer server.Close()
 
 	client, _ := NewFCSClient(FCSConfig{
-		APIKey:  "bad-key",
-		Symbols: []string{"EURUSD"},
+		APIKey:   "bad-key",
+		Symbols:  []string{"EURUSD"},
 		Interval: "1h",
-		BaseURL: server.URL,
+		BaseURL:  server.URL,
 	})
 
 	_, err := client.FetchCandles(context.Background(), "EURUSD")

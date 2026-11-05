@@ -39,7 +39,7 @@ func TestCandleValidation(t *testing.T) {
 	valid := Candle{
 		Symbol: "EUR/USD", Timeframe: Timeframe1h,
 		OpenTime: time.Date(2026, 8, 20, 14, 0, 0, 0, time.UTC),
-		Open: 1.08400, High: 1.08500, Low: 1.08300, Close: 1.08450,
+		Open:     1.08400, High: 1.08500, Low: 1.08300, Close: 1.08450,
 		Provider: "twelvedata", FetchedAt: time.Now(),
 	}
 	if err := valid.Validate(); err != nil {
@@ -147,13 +147,13 @@ func TestProviderError(t *testing.T) {
 
 // fakeProvider implements MarketDataProvider for testing.
 type fakeProvider struct {
-	name       string
-	supported  map[string]bool
-	candles    []Candle
-	quote      Quote
-	err        error
-	quota      ProviderQuota
-	callCount  int
+	name      string
+	supported map[string]bool
+	candles   []Candle
+	quote     Quote
+	err       error
+	quota     ProviderQuota
+	callCount int
 }
 
 func (f *fakeProvider) Name() string { return f.name }

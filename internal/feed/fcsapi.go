@@ -15,10 +15,10 @@ import (
 
 // FCSConfig configures the FCS API REST client.
 type FCSConfig struct {
-	APIKey   string   `json:"api_key"`
-	BaseURL  string   `json:"base_url"`
-	Symbols  []string `json:"symbols"`
-	Interval string   `json:"interval"` // "1h", "5m", "15m", "1d"
+	APIKey   string        `json:"api_key"`
+	BaseURL  string        `json:"base_url"`
+	Symbols  []string      `json:"symbols"`
+	Interval string        `json:"interval"` // "1h", "5m", "15m", "1d"
 	Timeout  time.Duration `json:"timeout"`
 }
 
@@ -260,14 +260,18 @@ func (c *FCSClient) parseCandles(symbol string, raw []fcsCandle) []Candle {
 		low := parseFCSFloat(v.Low)
 		close_ := parseFCSFloat(v.Close)
 
+		// FCS timestamps a bar by its open.
+		barOpen, barClose := resolveBarTimes(t, c.config.Interval)
 		candle := Candle{
-			Symbol:   symbol,
-			Interval: c.config.Interval,
-			Open:     open,
-			High:     high,
-			Low:      low,
-			Close:    close_,
-			Time:     t,
+			Symbol:    symbol,
+			Interval:  c.config.Interval,
+			Open:      open,
+			High:      high,
+			Low:       low,
+			Close:     close_,
+			Time:      barOpen,
+			OpenTime:  barOpen,
+			CloseTime: barClose,
 		}
 		if err := candle.Validate(); err == nil {
 			candles = append(candles, candle)

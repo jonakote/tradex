@@ -42,8 +42,8 @@ func TestServeInitializeToolsAndResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	resources := third["result"].(map[string]any)["resources"].([]any)
-	if len(resources) != 4 {
-		t.Fatalf("expected four resources, got %v", resources)
+	if len(resources) != 6 {
+		t.Fatalf("expected six resources, got %v", resources)
 	}
 }
 

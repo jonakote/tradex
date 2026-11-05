@@ -730,6 +730,188 @@ Implemented:
 This is a research strategy, not evidence of profitability. Breakout targets,
 retests, liquidity context, and walk-forward/holdout validation remain pending.
 
+## Strategy extension: deterministic Candle Range Theory v0.1
+
+Implemented:
+
+- versioned CRT contract in `docs/CANDLE_RANGE_SPEC.md`, spec version
+  `crt-0.1.0`;
+- two-candle purge detector in `internal/features/crt.go`: adjacency,
+  range height, purge depth floor and ceiling, numeric close-back-inside
+  reclaim, and a reward/risk floor, all in integer tick/basis-point
+  arithmetic;
+- both-sides-purged pairs rejected as ambiguous rather than classified;
+- lifecycle machine in `internal/strategy/crt`:
+  `SEEKING_RANGE -> ARMED -> FILLED -> COMPLETED | INVALIDATED | EXPIRED`,
+  with limit-only entry at purge equilibrium, mechanical entry expiry, and a
+  setup-bar time stop;
+- pessimistic intrabar resolution: a confirmation bar spanning both stop and
+  target resolves to the stop;
+- measurement harness `internal/research/crtlab` plus research CLI
+  `cmd/crtlab`, reusing `analytics.BuildReport` for win-rate confidence
+  intervals, expectancy, profit factor, drawdown and loss streaks, with an
+  opportunity funnel and per-direction/per-hour slices;
+- data-coverage guard: a pattern whose fill window has no confirmation data is
+  counted as `uncovered` and stood down via `Machine.StandDown`, instead of
+  being booked as an unfilled expiry and corrupting the funnel;
+- 22 unit tests covering detection, rejection, lifecycle, cost accounting,
+  event ordering, coverage gaps, stand-down, and run-to-run determinism.
+
+Measured on free vendor candles with costs charged, this strategy has **no
+demonstrated edge**: baseline expectancy is +0.023 R on BTCUSDT (profit factor
+1.038) and negative on ETHUSDT, EURUSD, GBPUSD and XAUUSD. The one attractive
+cell in a 40-cell filter sweep collapses from +0.408 R to +0.043 R per trade
+out of sample. v0.1 is a recorded negative baseline and must not be promoted.
+See [CANDLE_RANGE_SPEC.md](CANDLE_RANGE_SPEC.md) for the tables and the open
+research questions.
+
+## Data extension: keyless live FX from Dukascopy tick files
+
+Implemented:
+
+- tick-file decoding (20-byte big-endian records; integer points, so no
+  float step) and aggregation into completed candles on the bid, ask or mid;
+- `dukascopy.LiveFeed`, polled by `tradex signals` through a `"dukascopy"`
+  config section, requiring no API key;
+- the in-progress hour is never requested, and a bar spanning any
+  unpublished hour is withheld rather than emitted with an understated range;
+- 7 tests pinned against a real published hour (EURUSD 2026-11-05 13:00,
+  5,140 ticks), including the invariant that an hourly bar's open, close and
+  extremes reconcile exactly with its four 15m sub-bars.
+
+Verified live end to end: 36 candles across EURUSD, GBPUSD and XAUUSD
+produced CRT signals, and one was checked against independently rebuilt bars.
+For the GBPUSD setup, the range bar at 07:00 had low 1.34698 and high
+1.35007; the 08:00 purge bar swept to 1.34646 (52 ticks) and closed back
+inside at 1.34811. Equilibrium entry 1.34734, stop 1.34644, target 1.35007 —
+all three matched the emitted signal exactly.
+
+Latency is the limiting property: a bar appears roughly an hour after it
+closes, which suits daily and 4h monitoring but cannot support acting on a
+15m or 1h limit. Lower latency requires the cTrader Open API, an MT5 bridge,
+a keyed provider, or a TradingView webhook.
+
+## Correctness fix: explicit bar boundaries and shared interval table
+
+`feed.Candle` now declares `OpenTime`/`CloseTime` for the half-open interval
+it owns, and every producer sets them: Binance, Twelve Data, FCS, Finnhub,
+cTrader and the webhook ingress.
+
+The field `Time` had undefined semantics and consumers disagreed. Producers
+and the market-data manager treated it as the bar's open; the signal engine
+treated it as the close and subtracted a timeframe. The engine therefore
+labelled each bar with the previous bar's window, which stamped a pattern one
+full bar before its data existed, expired the resulting order window at the
+instant it should have opened, and overstated candle age by a bar so the
+staleness guard dropped fresh signals.
+
+Also fixed: `feed.IntervalDuration` is now the single interval table covering
+both vendor vocabularies. The signal engine's local copy knew only
+`15min`/`1day`-style spellings, so a Binance `15m` or `1d` stream resolved to
+a zero duration and **every candle was silently discarded** — only
+`1h/2h/4h/8h` overlapped between the two vocabularies.
+
+Signals are now stamped at the bar's close, which is when a pattern becomes
+knowable, and expiry is measured from there.
+
+Verified against raw exchange data: on BTCUSDT 15m, a bar pair with range low
+77438.00 and a purge to 77392.01 closing back inside at 77478.15 yields an
+equilibrium entry of 77435.62, matching the emitted signal exactly, knowable
+at the 15:15 close and expiring 15:30. A 15m stream now processes 2,994
+candles where it previously processed none.
+
+## Correctness fix: verified quote precision registry
+
+`internal/instrument` now owns quote precision for every instrument, and both
+the live signal engine and the Dukascopy research feed read from it; a test
+asserts the two agree.
+
+The live engine previously inferred precision from the symbol string,
+defaulting to five decimals. BTCUSDT therefore had a tick of 0.00001 against
+a venue tick of 0.01, which made `stop_buffer_ticks: 2` worth $0.00002 on an
+$86,000 instrument — the stop effectively sat on the purge wick — and printed
+prices such as 85999.99998. Gold disagreed between live (2 digits) and
+research (3 digits), XAGUSD paired a 5-digit scale with a 0.01 pip, and US30
+fell through to the FX default.
+
+Implemented:
+
+- verified precision with recorded provenance: FX and metals from Dukascopy
+  published points, crypto from the Binance `PRICE_FILTER` tickSize;
+- `Unverified` flag for energy and index conventions carried over from prior
+  code, so they keep resolving without being mistaken for verified facts;
+- fail-closed `Lookup`: an unregistered instrument is skipped by the engine
+  rather than processed under a guessed scale;
+- `Normalize`, so `EUR/USD`, `eur-usd` and `EURUSD` resolve to one spec;
+- half-away-from-zero tick conversion, replacing float truncation that could
+  lose a tick on ordinary prices;
+- display at each instrument's own precision instead of a fixed five decimals;
+- `cmd/crtlab` resolves its price scale from the registry, with `-scale`
+  retained only as an override for foreign CSV.
+
+Backtest results are unchanged, confirming the research runs had always been
+given the correct scale explicitly; the defect was confined to the live
+engine. On the same BTCUSDT bar, the stop moved from 85999.99998 to
+85999.98 and reported penetration from 3,318,000 ticks to 3,318 ticks
+($33.18).
+
+## Live signal extension: Candle Range Theory on the signal engine
+
+Implemented:
+
+- optional, default-disabled CRT path in the live signal engine
+  (`enable_crt`), emitting the **armed setup only**: a resting limit at the
+  purge equilibrium with its objective stop and target;
+- `Signal.EntryType`, so a limit model is never rendered as a market entry;
+- `max_signal_age_bars`: suppresses signals from candles that closed more
+  than N bars ago, measured in the candle's own interval. A backfilling
+  poller previously emitted a signal for every historical pattern, flooding
+  the monitor with setups whose windows had closed weeks earlier. Warm-up
+  bars still build swings, trend and structure; they simply cannot emit.
+  Zero disables the check, so replay and tests are unaffected;
+- mutex-guarded engine state, because several feed pollers call
+  `ProcessCandle` from their own goroutines;
+- crypto distance reporting: pips are quoted only for instruments that have
+  a pip convention, instead of printing millions of "pips" for BTCUSDT.
+
+Verified end to end against live data: a backfill of 1,794 Binance 4h candles
+warmed state with zero stale emissions, and a freshly closed pattern
+delivered over the live webhook ingress produced a correct signal (entry
+1.00010, stop 0.99958, target 1.00200, R:R 3.7, expiring one bar out).
+
+Fill, stop, target and expiry adjudication is deliberately **not** in this
+path: it requires a confirmation-timeframe stream the engine does not
+consume, and lives in `internal/research/crtlab`. The engine emits evidence,
+never an order; CRT v0.1 has no demonstrated edge, so these signals are
+research output and not trade recommendations.
+
+## Data extension: Dukascopy historical feed and in-repo LZMA
+
+Implemented:
+
+- `internal/encoding/lzma`: a dependency-free LZMA1 ("alone" format) decoder —
+  range decoder, adaptive bit models, the 12-state literal/match machine, and
+  LZ77 match copying. Verified against fixtures produced by the reference XZ
+  Utils encoder (literal-heavy, long-overlapping-match, full-alphabet, tiny,
+  and empty streams) plus a real published payload; both the declared-size and
+  end-of-stream-marker paths are covered, and malformed streams are rejected
+  rather than panicking;
+- `internal/feed/dukascopy`: read-only historical candle feed. Published
+  integer points map directly onto `domain.Price` ticks, so no floating-point
+  conversion touches a price;
+- verified per-instrument digit counts for FX majors, JPY crosses, and
+  XAU/XAG, with unknown symbols refused rather than assumed;
+- zero-indexed month paths, closed-market filler-bar rejection, and the
+  published open/close/low/high field order, each pinned by a test;
+- bounded-concurrency fetching with request pacing, retry on 429/5xx, and
+  on-disk caching of raw payloads; concurrency does not affect output, which
+  is merged by open time;
+- research CLI `cmd/dukafetch` emitting the harness CSV layout.
+
+This replaced Yahoo Finance for FX and metals after Yahoo was found to
+duplicate the open into the close on 73% of EURUSD daily bars. See
+[MARKET_DATA_SOURCES.md](MARKET_DATA_SOURCES.md).
+
 ## Market-data extension: cTrader provider boundary
 
 Implemented:

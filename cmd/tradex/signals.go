@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"tradex/internal/feed"
+	"tradex/internal/feed/dukascopy"
 	"tradex/internal/marketdata/ctraderfeed"
 	sig "tradex/internal/signal"
 )
@@ -23,6 +24,7 @@ type SignalsConfig struct {
 	Finnhub      *feed.FinnhubConfig    `json:"finnhub,omitempty"`
 	CTrader      *ctraderfeed.Config    `json:"ctrader,omitempty"`
 	Webhook      *feed.WebhookConfig    `json:"webhook,omitempty"`
+	Dukascopy    *dukascopy.LiveConfig  `json:"dukascopy,omitempty"`
 	Engine       *sig.EngineConfig      `json:"engine,omitempty"`
 	PollInterval string                 `json:"poll_interval,omitempty"` // e.g. "5m", "15m"
 }
@@ -132,6 +134,48 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 			}
 			poll()
 			ticker := time.NewTicker(cTraderPollInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					poll()
+				}
+			}
+		}()
+	}
+
+	// Start the Dukascopy tick-derived candle poller. It needs no API key,
+	// but publishes a bar only after its clock hour completes, so it lags by
+	// roughly an hour and must not be used to act on short-timeframe limits.
+	if cfg.Dukascopy != nil {
+		dukaFeed, err := dukascopy.NewLiveFeed(*cfg.Dukascopy)
+		if err != nil {
+			fmt.Fprintf(stderr, "tradex signals: dukascopy feed: %v\n", err)
+			return 1
+		}
+		dukaPollInterval := pollIntervalOrDefault(cfg.PollInterval, 10*time.Minute)
+		fmt.Fprintf(stdout, "  Dukascopy: %d symbols (%s %s, poll every %s, ~1h publication lag)\n",
+			len(dukaFeed.Symbols()), dukaFeed.Interval(), dukaFeed.Side(), dukaPollInterval)
+
+		go func() {
+			poll := func() {
+				start := time.Now()
+				candles, err := dukaFeed.FetchAllSymbols(ctx)
+				if err != nil && ctx.Err() == nil {
+					fmt.Fprintf(stdout, "%s [dukascopy-poll] failed after %s: %v\n",
+						time.Now().UTC().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond), err)
+					return
+				}
+				fmt.Fprintf(stdout, "%s [dukascopy-poll] ok in %s: %d candles\n",
+					time.Now().UTC().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond), len(candles))
+				for _, candle := range candles {
+					engine.ProcessCandle(candle)
+				}
+			}
+			poll()
+			ticker := time.NewTicker(dukaPollInterval)
 			defer ticker.Stop()
 			for {
 				select {

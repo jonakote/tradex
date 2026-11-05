@@ -18,14 +18,37 @@ import (
 
 // Candle represents a completed OHLC bar from the feed.
 type Candle struct {
-	Symbol   string    `json:"symbol"`
-	Interval string    `json:"interval"`
-	Open     float64   `json:"open"`
-	High     float64   `json:"high"`
-	Low      float64   `json:"low"`
-	Close    float64   `json:"close"`
-	Volume   float64   `json:"volume"`
-	Time     time.Time `json:"time"`
+	Symbol   string  `json:"symbol"`
+	Interval string  `json:"interval"`
+	Open     float64 `json:"open"`
+	High     float64 `json:"high"`
+	Low      float64 `json:"low"`
+	Close    float64 `json:"close"`
+	Volume   float64 `json:"volume"`
+	// Time is the instant the bar OPENED. Every producer in this package
+	// sets it that way, matching Binance, cTrader and Twelve Data, which all
+	// timestamp a bar by its open.
+	//
+	// This was previously undefined, and consumers disagreed: the market
+	// data manager read it as the open while the signal engine read it as
+	// the close. The engine therefore labelled each bar with the previous
+	// bar's window, stamping a pattern one whole bar before its data
+	// existed and expiring the resulting order window before it opened.
+	// Prefer OpenTime/CloseTime; Time is retained for compatibility.
+	Time time.Time `json:"time"`
+	// OpenTime and CloseTime are the bar's half-open interval
+	// [OpenTime, CloseTime). CloseTime is always OpenTime plus the interval.
+	OpenTime  time.Time `json:"open_time"`
+	CloseTime time.Time `json:"close_time"`
+}
+
+// Bar returns the candle's open and close instants, deriving them from Time
+// when a producer has not set them explicitly.
+func (c Candle) Bar() (time.Time, time.Time) {
+	if !c.OpenTime.IsZero() && !c.CloseTime.IsZero() {
+		return c.OpenTime.UTC(), c.CloseTime.UTC()
+	}
+	return resolveBarTimes(c.Time, c.Interval)
 }
 
 // Validate checks that the candle has sensible values.
@@ -246,15 +269,19 @@ func (c *TwelveDataClient) parseCandles(symbol string, data twelveDataResponse) 
 		close_, _ := strconv.ParseFloat(v.Close, 64)
 		vol, _ := strconv.ParseFloat(v.Volume, 64)
 
+		// Twelve Data's `datetime` is the bar's open.
+		barOpen, barClose := resolveBarTimes(t, c.config.Interval)
 		candle := Candle{
-			Symbol:   symbol,
-			Interval: c.config.Interval,
-			Open:     open,
-			High:     high,
-			Low:      low,
-			Close:    close_,
-			Volume:   vol,
-			Time:     t,
+			Symbol:    symbol,
+			Interval:  c.config.Interval,
+			Open:      open,
+			High:      high,
+			Low:       low,
+			Close:     close_,
+			Volume:    vol,
+			Time:      barOpen,
+			OpenTime:  barOpen,
+			CloseTime: barClose,
 		}
 		if err := candle.Validate(); err == nil {
 			candles = append(candles, candle)
