@@ -12,7 +12,6 @@ import (
 
 	"tradex/internal/feed"
 	"tradex/internal/feed/dukascopy"
-	"tradex/internal/marketdata/ctraderfeed"
 	sig "tradex/internal/signal"
 )
 
@@ -22,7 +21,6 @@ type SignalsConfig struct {
 	TwelveData   *feed.TwelveDataConfig `json:"twelve_data,omitempty"`
 	FCS          *feed.FCSConfig        `json:"fcs,omitempty"`
 	Finnhub      *feed.FinnhubConfig    `json:"finnhub,omitempty"`
-	CTrader      *ctraderfeed.Config    `json:"ctrader,omitempty"`
 	Webhook      *feed.WebhookConfig    `json:"webhook,omitempty"`
 	Dukascopy    *dukascopy.LiveConfig  `json:"dukascopy,omitempty"`
 	Engine       *sig.EngineConfig      `json:"engine,omitempty"`
@@ -63,17 +61,6 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 	if cfg.Finnhub != nil && cfg.Finnhub.APIKey == "" {
 		cfg.Finnhub.APIKey = os.Getenv("FINNHUB_API_KEY")
 	}
-	if cfg.CTrader != nil {
-		if cfg.CTrader.AccountID == "" {
-			cfg.CTrader.AccountID = os.Getenv("CTRADER_ACCOUNT_ID")
-		}
-		if cfg.CTrader.Environment == "" {
-			cfg.CTrader.Environment = os.Getenv("CTRADER_ENVIRONMENT")
-		}
-		if cfg.CTrader.TokenFile == "" {
-			cfg.CTrader.TokenFile = os.Getenv("CTRADER_TOKEN_FILE")
-		}
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -100,51 +87,6 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "  TRADEX LIVE SIGNAL MONITOR")
 	fmt.Fprintln(stdout, "═══════════════════════════════════════════════════")
 	fmt.Fprintf(stdout, "  Started:  %s\n", time.Now().Format("2006-01-02 15:04 UTC"))
-
-	// Start optional direct cTrader Open API feed. It is read-only and opt-in;
-	// order tools are not part of this client or signal command.
-	if cfg.CTrader != nil {
-		if cfg.CTrader.Environment == "" {
-			cfg.CTrader.Environment = "demo"
-		}
-		ctraderFeed, err := ctraderfeed.New(*cfg.CTrader, time.Now)
-		if err != nil {
-			fmt.Fprintf(stderr, "tradex signals: cTrader feed: %v\n", err)
-			return 1
-		}
-		defer ctraderFeed.Close()
-
-		cTraderPollInterval := pollIntervalOrDefault(cfg.PollInterval, 1*time.Minute)
-		fmt.Fprintf(stdout, "  cTrader:  %d symbols (%s, poll every %s)\n",
-			len(cfg.CTrader.Symbols), cfg.CTrader.Interval, cTraderPollInterval)
-		go func() {
-			poll := func() {
-				start := time.Now()
-				candles, err := ctraderFeed.FetchAllSymbols(ctx)
-				if err != nil && ctx.Err() == nil {
-					fmt.Fprintf(stdout, "%s [ctrader-poll] failed after %s: %v\n",
-						time.Now().UTC().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond), err)
-					return
-				}
-				fmt.Fprintf(stdout, "%s [ctrader-poll] ok in %s: %d candles\n",
-					time.Now().UTC().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond), len(candles))
-				for _, candle := range candles {
-					engine.ProcessCandle(candle)
-				}
-			}
-			poll()
-			ticker := time.NewTicker(cTraderPollInterval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					poll()
-				}
-			}
-		}()
-	}
 
 	// Start the Dukascopy tick-derived candle poller. It needs no API key,
 	// but publishes a bar only after its clock hour completes, so it lags by
