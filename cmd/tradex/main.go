@@ -738,6 +738,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runCandles(args[1:], stdout, stderr)
 	}
 
+	if len(args) >= 1 && args[0] == "outcomes" {
+		return runOutcomes(args[1:], stdout, stderr)
+	}
+
 	fmt.Fprintln(stderr, "tradex: deterministic trading research")
 	fmt.Fprintln(stderr, "usage:")
 	fmt.Fprintln(stderr, "  tradex version")
@@ -772,6 +776,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stderr, "  tradex price [symbol ...]")
 	fmt.Fprintln(stderr, "  tradex watch [--self-test] <config.json>")
 	fmt.Fprintln(stderr, "  tradex candles <symbol> <interval> <from> <to> <out.csv>")
+	fmt.Fprintln(stderr, "  tradex outcomes <journal.jsonl> [journal2.jsonl ...]")
 	return 2
 }
 
