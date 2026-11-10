@@ -178,3 +178,37 @@ strategy currently meets this bar with the confidence to flip it — IBS v0.2
 is the closest (2/5 instruments on paper) but was held back deliberately
 because the two instruments that confirmed under the OLD raw signal now
 disagree under the new overlay; see `docs/MEANREVERSION_SPEC.md`.
+
+## Multi-timeframe (HTF trend filter)
+
+`internal/features/trend.go` (`DetectHTFTrend`, reusing the existing
+`NewSwingDetector`/`ClassifyTrend` swing-structure classifier — not a new,
+separately-unmeasured trend indicator) + `internal/strategy/scan/htf.go`
+(`BuildHTFTrendSeries`, `HTFTrendAdmit`) + `scan.BacktestFiltered` let any
+stop/target detector be gated on a higher-timeframe trend: a setup is only
+admitted when its side agrees with the HTF trend known at `DetectedAt` (no
+lookahead). `cmd/mtflab` measures baseline vs HTF-filtered side by side.
+
+**Measured (15m entry / 1h HTF bias, EURUSD + XAUUSD, ~60 days, swing 3/2,
+same costs as the table above):**
+
+| strategy | symbol | baseline (trades, R/trade) | HTF-filtered (trades, R/trade) |
+|---|---|---|---|
+| Continuation | EURUSD | 14, +0.856R (halves −0.040/+1.752, not robust) | 5, +1.402R — too few trades |
+| ICT | EURUSD | 33, +0.168R (halves −0.067/+0.526, not robust) | 8, −0.385R — too few trades |
+| AMN | EURUSD | 32, −0.260R (negative) | 17, −0.311R — too few trades |
+| Continuation | XAUUSD | 18, −0.194R — too few trades | 4, +0.052R — too few trades |
+| ICT | XAUUSD | 22, −0.284R — too few trades | 7, −0.104R — too few trades |
+| AMN | XAUUSD | 38, +0.058R (halves −0.244/+0.176, not robust) | 16, −0.102R — too few trades |
+
+**Verdict: not promotable.** The filter mechanically works (verified
+no-lookahead, admits/rejects correctly) but on this sample it mostly just
+cuts the trade count below the 30-trade measurability floor without fixing
+the underlying sign problem, and where a sample survives it doesn't clear
+both-halves-positive either. Kept as a measurement tool (`cmd/mtflab`) and a
+reusable primitive (`scan.HTFTrendAdmit`/`BacktestFiltered`), not wired into
+`tradex watch` — deploying it live would repeat the exact mistake the
+forward-test logs already exposed (running unvalidated strategies and
+calling the resulting losses a surprise). Re-run with other HTF/LTF pairs,
+swing windows or instruments if a real edge is still suspected; the tool
+makes that a one-command measurement instead of a redeploy-and-wait.

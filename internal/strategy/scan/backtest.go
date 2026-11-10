@@ -104,6 +104,22 @@ func (p pending) short() bool { return p.setup.Side == "sell" }
 // synthetic fills (for analytics reuse).
 func Backtest(symbol string, spec instrument.Spec, timeframe time.Duration,
 	candles []domain.Candle, det Detector, params BTParams) (BTResult, []domain.Fill, error) {
+	return backtest(symbol, spec, timeframe, candles, det, params, nil)
+}
+
+// BacktestFiltered is Backtest with an admission gate applied to every
+// detected setup before it is armed — e.g. scan.HTFTrendAdmit, to measure
+// whether a higher-timeframe trend filter changes a detector's expectancy.
+// A nil admit behaves exactly like Backtest.
+func BacktestFiltered(symbol string, spec instrument.Spec, timeframe time.Duration,
+	candles []domain.Candle, det Detector, params BTParams,
+	admit func(Setup) (bool, error)) (BTResult, []domain.Fill, error) {
+	return backtest(symbol, spec, timeframe, candles, det, params, admit)
+}
+
+func backtest(symbol string, spec instrument.Spec, timeframe time.Duration,
+	candles []domain.Candle, det Detector, params BTParams,
+	admit func(Setup) (bool, error)) (BTResult, []domain.Fill, error) {
 
 	if err := params.validate(); err != nil {
 		return BTResult{}, nil, err
@@ -195,7 +211,7 @@ func Backtest(symbol string, spec instrument.Spec, timeframe time.Duration,
 	}
 
 	for _, candle := range candles {
-		events, err := stream.Advance(candle, nil)
+		events, err := stream.Advance(candle, admit)
 		if err != nil {
 			return BTResult{}, nil, err
 		}
