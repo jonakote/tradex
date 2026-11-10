@@ -138,3 +138,28 @@ until more instruments confirm it.
   significance; the one survivor (Optimal Trade Entry) reduces to "buy a
   pullback in a trend" with its Fibonacci precision shown to be irrelevant.
   Not built here; recorded so it is not re-litigated without new evidence.
+
+## Intraday IBS (1h / 15m) — tested, not confirmed
+
+The literature's IBS effect is documented on DAILY bars only; it was worth
+checking whether it survives at the timeframes `tradex watch` can actually
+poll fast on (15m, 1h), same parameters as the v0.2 daily config
+(`trend_bars=200`, `ibs_long_below=2000bps`, `ibs_exit_above=5000bps`,
+`max_hold=10` — bar counts carried over unchanged, not recalibrated per
+timeframe):
+
+| Instrument | Timeframe | Sample | Full edge | Pre-split | Post-split | Verdict |
+|---|---|---|---|---|---|---|
+| EURUSD | 15m | 327 trades, ~60d | −2.63bp | −2.93bp | −2.54bp | negative, consistent |
+| EURUSD | 1h | 115 trades, ~60d | −2.18bp | −0.93bp | −3.50bp | negative, consistent |
+| XAGUSD | 15m | 334 trades, ~60d | −0.91bp | −4.16bp | +1.68bp | halves disagree |
+| XAGUSD | 1h | 188 trades, ~180d | +4.36bp | **−0.01bp** | **+8.46bp** | halves disagree |
+
+EURUSD's daily edge does not transfer intraday at all (negative at both 15m
+and 1h, both halves). XAGUSD's 1h run looked promising on a short ~60-day
+sample (85 trades, +8.25bp, pre-split +7.36bp/77 trades) — but re-run on a
+proper ~180-day split, the first half flattens to +/-0bp and only the
+second half carries the edge. Same pattern as every other "confirms on one
+cut of the data" result in this project: not promotable. The daily
+timeframe remains the only one with a measured, if still narrow (2/5
+instruments), IBS edge.
