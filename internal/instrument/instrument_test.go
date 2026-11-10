@@ -128,13 +128,31 @@ func TestLookupFailsClosedOnUnknownInstruments(t *testing.T) {
 // Instruments carried over from prior convention are flagged so they cannot
 // be mistaken for venue-verified precision.
 func TestCarriedOverInstrumentsAreMarkedUnverified(t *testing.T) {
-	for _, symbol := range []string{"BRENT", "NQ", "US30"} {
+	for _, symbol := range []string{"BRENT", "NQ", "SPX500"} {
 		spec, ok := Lookup(symbol)
 		if !ok {
 			t.Fatalf("%s must remain resolvable for backwards compatibility", symbol)
 		}
 		if !spec.Unverified {
 			t.Fatalf("%s precision is not venue-verified and must say so", symbol)
+		}
+	}
+}
+
+// US500/US100/US30 were verified against GET /api/v1/markets (tickSize 0.1,
+// pipPosition 0, scalingFactor 1 on all three) and must NOT carry the
+// Unverified flag now that they have been confirmed.
+func TestVerifiedUSIndices(t *testing.T) {
+	for _, symbol := range []string{"US500", "US100", "US30"} {
+		spec, ok := Lookup(symbol)
+		if !ok {
+			t.Fatalf("%s must resolve", symbol)
+		}
+		if spec.Unverified {
+			t.Fatalf("%s is venue-verified and must not be flagged Unverified", symbol)
+		}
+		if spec.Digits != 1 || spec.PriceScale != 10 {
+			t.Fatalf("%s expected 1 digit / scale 10, got digits=%d scale=%d", symbol, spec.Digits, spec.PriceScale)
 		}
 	}
 }

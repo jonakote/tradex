@@ -31,6 +31,15 @@ var capitalEpics = map[string]string{
 	// Metals do NOT use the symbol as the epic.
 	"XAUUSD": "GOLD",
 	"XAGUSD": "SILVER",
+
+	// US equity indices. Verified present and TRADEABLE via
+	// GET /api/v1/markets?searchTerm=... on 2026-11-10: tickSize 0.1,
+	// pipPosition 0, scalingFactor 1 on all three (1 decimal place, NOT
+	// the 2-digit guess instrument.go previously carried for these as
+	// Unverified).
+	"US500": "US500", // S&P 500
+	"US100": "US100", // Nasdaq 100 ("US Tech 100")
+	"US30":  "US30",  // Dow ("US Wall Street 30")
 }
 
 // CapitalEpic returns the Capital.com epic for a symbol in any spelling. It

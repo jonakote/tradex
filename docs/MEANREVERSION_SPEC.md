@@ -139,6 +139,46 @@ until more instruments confirm it.
   pullback in a trend" with its Fibonacci precision shown to be irrelevant.
   Not built here; recorded so it is not re-litigated without new evidence.
 
+## US equity indices — US100 confirms, US500/US30 do not survive a longer sample
+
+The literature this whole detector is based on (Pagonidis 2013) documents
+the IBS effect on US equity ETFs/indices specifically — an asset class this
+project had never actually tested; `instrument.go` carried US500/US100/US30
+as `Unverified` leftovers outside the research universe. Verified their
+real Capital.com epics (`GET /api/v1/markets`: tickSize 0.1, pipPosition 0,
+scalingFactor 1 on all three — 1 decimal place, corrected from the carried-
+over 2-digit guess) and tested the same v0.2 config as the confirmed FX/
+metals result (`trend_bars=200`, `ibs_long_below=2000bps`,
+`ibs_exit_above=5000bps`, `max_hold=10`, 2bp cost):
+
+| Instrument | Sample | Full edge | Pre-split | Post-split | Verdict |
+|---|---|---|---|---|---|
+| US500 | 2y (60 trades) | +20.82bp | +38.42bp (13 trades) | +15.95bp (47) | looked great, too few trades/half |
+| US500 | **6y (228 trades)** | +6.91bp | **−6.81bp** (89) | +15.70bp (139) | **not robust** |
+| US100 | 2y (56 trades) | +19.38bp | +47.04bp (13) | +11.02bp (43) | looked great, too few trades/half |
+| US100 | **6y (205 trades)** | +14.34bp | **+15.95bp** (77) | **+13.37bp** (128) | **confirms, both halves, proper sample** |
+| US30 | 2y (68 trades) | +29.17bp | +15.03bp (17) | +33.89bp (51) | looked great, too few trades/half |
+| US30 | **6y (219 trades)** | +4.49bp | **−12.79bp** (86) | +15.66bp (133) | **not robust** |
+
+The lesson repeats one more time, in the opposite direction from usual: a
+short 2-year window made ALL THREE indices look like a clean confirmation
+(60-85% win rates, every half positive) — but that sample only had 13-17
+trades per half, under this project's own 30-trade floor. Re-run on 6 years
+with proper statistical power (77-139 trades/half), US500 and US30 both
+flip negative in their first half and don't survive; only **US100
+(Nasdaq)** holds up in both halves on a real sample.
+
+**US100 is a genuine third confirming instrument**, alongside XAGUSD and
+EURUSD — a different asset class entirely, which is the kind of breadth
+the project's promotion rule is actually looking for. It is not perfectly
+independent of US500/US30 (same equity-index family), so one more fresh
+confirmation outside all three families already tried (FX, metals, US
+equity indices) would still be the stronger bar to clear before flipping
+`Validated()`. Added to the live daily IBS forward test
+(`docs/examples_watch_forward_daily_ibs_v2.json`) alongside XAGUSD/EURUSD —
+still labelled UNVALIDATED, now collecting real forward data on 3
+confirmed instruments instead of 2.
+
 ## Intraday IBS (1h / 15m) — tested, not confirmed
 
 The literature's IBS effect is documented on DAILY bars only; it was worth

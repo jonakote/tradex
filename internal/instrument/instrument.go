@@ -154,11 +154,19 @@ var registry = func() map[string]Spec {
 		specs = append(specs, Spec{Symbol: symbol, Class: ClassEnergy,
 			Digits: 2, PriceScale: scaleFor(2), PipSize: 1, Unverified: true})
 	}
-	for _, symbol := range []string{
-		"NQ", "NAS100", "US100", "IXIC", "SPX", "SPX500", "US500", "US30", "DJI",
-	} {
+	for _, symbol := range []string{"NQ", "NAS100", "IXIC", "SPX", "SPX500", "DJI"} {
 		specs = append(specs, Spec{Symbol: symbol, Class: ClassIndex,
 			Digits: 2, PriceScale: scaleFor(2), PipSize: 1, Unverified: true})
+	}
+	// US500/US100/US30: verified against GET /api/v1/markets on 2026-11-10
+	// (tickSize 0.1, pipPosition 0, scalingFactor 1 on all three) while
+	// testing whether IBS mean reversion — documented in the literature on
+	// US equity ETFs/indices specifically, never tested here before —
+	// holds on the asset class it actually comes from. 1 decimal place,
+	// not the 2-digit guess the rest of this block carries.
+	for _, symbol := range []string{"US500", "US100", "US30"} {
+		specs = append(specs, Spec{Symbol: symbol, Class: ClassIndex,
+			Digits: 1, PriceScale: scaleFor(1), PipSize: 1})
 	}
 
 	table := make(map[string]Spec, len(specs))
