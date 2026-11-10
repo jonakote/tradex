@@ -19,6 +19,9 @@ func TestBinanceConfigValidate(t *testing.T) {
 		{"missing symbols", BinanceConfig{Interval: "1h"}, true},
 		{"bad interval", BinanceConfig{Symbols: []string{"BTCUSDT"}, Interval: "10m"}, true},
 		{"limit too large", BinanceConfig{Symbols: []string{"BTCUSDT"}, Interval: "1h", Limit: 1001}, true},
+		// Fail closed on an instrument with no verified tick size: a guessed
+		// scale changes the meaning of every tick-denominated parameter.
+		{"unverified instrument", BinanceConfig{Symbols: []string{"DOGEUSDT"}, Interval: "1h"}, true},
 	}
 	for _, tt := range tests {
 		if err := tt.cfg.Validate(); (err != nil) != tt.wantErr {
@@ -40,7 +43,12 @@ func TestBinanceSymbol(t *testing.T) {
 	}
 }
 
-func TestBinanceFetchCandlesFiltersOpenKlineAndDeduplicates(t *testing.T) {
+func TestBinanceImplementsSource(t *testing.T) {
+	var _ Source = (*Binance)(nil)
+}
+
+// The forming kline must be dropped and each closed bar emitted exactly once.
+func TestBinancePollFiltersOpenKlineAndDeduplicates(t *testing.T) {
 	now := time.Now().UTC()
 	closedOpen := now.Add(-2 * time.Hour).UnixMilli()
 	closedClose := now.Add(-time.Hour).UnixMilli()
@@ -57,62 +65,50 @@ func TestBinanceFetchCandlesFiltersOpenKlineAndDeduplicates(t *testing.T) {
 		if got := r.URL.Query().Get("interval"); got != "1h" {
 			t.Errorf("unexpected interval: %q", got)
 		}
-		json.NewEncoder(w).Encode([][]any{
-			{closedOpen, "100", "110", "90", "105", "12.5", closedClose, "0", 1, "0", "0", "0"},
-			{openOpen, "105", "115", "95", "110", "7.5", openClose, "0", 1, "0", "0", "0"},
+		_ = json.NewEncoder(w).Encode([][]any{
+			{closedOpen, "100.00", "110.00", "90.00", "105.00", "12.5", closedClose, "0", 1, "0", "0", "0"},
+			{openOpen, "105.00", "115.00", "95.00", "110.00", "7.5", openClose, "0", 1, "0", "0", "0"},
 		})
 	}))
 	defer server.Close()
 
-	client, err := NewBinanceClient(BinanceConfig{
+	source, err := NewBinance(BinanceConfig{
 		Symbols: []string{"BTCUSDT"}, Interval: "1h", Limit: 5, BaseURL: server.URL,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	candles, err := client.FetchCandles(context.Background(), "BTC/USDT")
+	candles, err := source.Poll(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(candles) != 1 {
 		t.Fatalf("expected one closed candle, got %d", len(candles))
 	}
-	if candles[0].Symbol != "BTC/USDT" || candles[0].Close != 105 || candles[0].Volume != 12.5 {
-		t.Fatalf("unexpected candle: %+v", candles[0])
+	candle := candles[0]
+	if candle.Symbol != "BTCUSDT" || candle.Source != "binance" {
+		t.Errorf("unexpected provenance: %s/%s", candle.Source, candle.Symbol)
+	}
+	// BTCUSDT is verified at 2 decimals, so 105.00 is 10500 integer ticks.
+	if candle.Open != 10000 || candle.High != 11000 || candle.Low != 9000 || candle.Close != 10500 {
+		t.Errorf("unexpected OHLC ticks: %+v", candle)
+	}
+	// The owned interval is derived from the open, because Binance reports a
+	// close one millisecond early (23:59:59.999 for a bar owning up to 24:00).
+	if !candle.CloseTime.Equal(candle.OpenTime.Add(time.Hour)) {
+		t.Errorf("CloseTime %s is not open plus one hour", candle.CloseTime)
+	}
+	if candle.Timeframe != time.Hour {
+		t.Errorf("Timeframe = %s, want 1h", candle.Timeframe)
 	}
 
-	candles, err = client.FetchCandles(context.Background(), "BTC/USDT")
+	candles, err = source.Poll(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(candles) != 0 {
-		t.Fatalf("expected deduplicated second fetch, got %d candles", len(candles))
-	}
-}
-
-func TestBinanceFetchQuote(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v3/ticker/bookTicker" {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-		if got := r.URL.Query().Get("symbol"); got != "ETHUSDT" {
-			t.Errorf("unexpected symbol: %q", got)
-		}
-		json.NewEncoder(w).Encode(map[string]string{"bidPrice": "2000.00", "askPrice": "2000.50"})
-	}))
-	defer server.Close()
-
-	client, err := NewBinanceClient(BinanceConfig{Symbols: []string{"ETHUSDT"}, Interval: "1h", BaseURL: server.URL})
-	if err != nil {
-		t.Fatal(err)
-	}
-	quote, err := client.FetchQuote(context.Background(), "ETHUSDT")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if quote.Bid != 2000 || quote.Ask != 2000.5 || quote.Price != 2000.25 {
-		t.Fatalf("unexpected quote: %+v", quote)
+		t.Fatalf("expected deduplicated second poll, got %d candles", len(candles))
 	}
 }
 

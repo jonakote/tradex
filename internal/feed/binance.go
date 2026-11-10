@@ -11,12 +11,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"tradex/internal/domain"
+	"tradex/internal/instrument"
 )
 
-// BinanceConfig configures the public Binance Spot REST market-data client.
-// Kline and book-ticker endpoints are public and do not require an API key.
+// BinanceConfig configures the public Binance Spot kline source. The endpoint
+// is public; an API key is optional and unused for market data.
 type BinanceConfig struct {
 	APIKey   string        `json:"api_key,omitempty"`
 	BaseURL  string        `json:"base_url,omitempty"`
@@ -28,13 +30,18 @@ type BinanceConfig struct {
 
 func (c BinanceConfig) Validate() error {
 	if len(c.Symbols) == 0 {
-		return errors.New("at least one Binance symbol is required")
+		return ErrNoSymbols
 	}
-	if !validBinanceInterval(c.Interval) {
-		return fmt.Errorf("invalid Binance interval %q", c.Interval)
+	if IntervalDuration(c.Interval) <= 0 {
+		return fmt.Errorf("feed: unknown Binance interval %q", c.Interval)
 	}
 	if c.Limit < 0 || c.Limit > 1000 {
-		return errors.New("Binance limit must be 0 (default) or between 1 and 1000")
+		return errors.New("feed: Binance limit must be 0 (default) or 1..1000")
+	}
+	for _, symbol := range c.Symbols {
+		if _, err := resolve(binanceSymbol(symbol)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -60,223 +67,155 @@ func (c BinanceConfig) limit() int {
 	return 100
 }
 
-func validBinanceInterval(s string) bool {
-	switch s {
-	case "1s", "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M":
-		return true
-	}
-	return false
-}
-
-// BinanceClient fetches completed Spot klines and public book-ticker quotes.
-type BinanceClient struct {
+// Binance is a Source over the public Spot kline endpoint.
+type Binance struct {
 	config BinanceConfig
 	client *http.Client
-	mu     sync.Mutex
-	last   map[string]time.Time
+	cursor *cursor
+	now    func() time.Time
 }
 
-// NewBinanceClient creates a public Binance Spot market-data client.
-func NewBinanceClient(cfg BinanceConfig) (*BinanceClient, error) {
-	if err := cfg.Validate(); err != nil {
+// NewBinance creates a public Binance Spot candle source.
+func NewBinance(config BinanceConfig) (*Binance, error) {
+	if err := config.Validate(); err != nil {
 		return nil, err
 	}
-	return &BinanceClient{
-		config: cfg,
-		client: &http.Client{Timeout: cfg.timeout()},
-		last:   make(map[string]time.Time),
+	return &Binance{
+		config: config,
+		client: &http.Client{Timeout: config.timeout()},
+		cursor: newCursor(),
+		now:    time.Now,
 	}, nil
 }
 
-// FetchCandles fetches the configured interval for one symbol.
-func (c *BinanceClient) FetchCandles(ctx context.Context, symbol string) ([]Candle, error) {
-	return c.fetchCandles(ctx, symbol, c.config.Interval)
-}
+func (b *Binance) Name() string      { return "binance" }
+func (b *Binance) Interval() string  { return b.config.Interval }
+func (b *Binance) Symbols() []string { return b.config.Symbols }
 
-// FetchCandlesAt fetches the requested interval. It is used by the central
-// market-data manager when a request differs from the client's default.
-func (c *BinanceClient) FetchCandlesAt(ctx context.Context, symbol, interval string) ([]Candle, error) {
-	return c.fetchCandles(ctx, symbol, interval)
-}
-
-func (c *BinanceClient) fetchCandles(ctx context.Context, symbol, interval string) ([]Candle, error) {
-	if !validBinanceInterval(interval) {
-		return nil, fmt.Errorf("binance unsupported interval %q", interval)
-	}
-
-	query := url.Values{}
-	query.Set("symbol", binanceSymbol(symbol))
-	query.Set("interval", interval)
-	query.Set("limit", strconv.Itoa(c.config.limit()))
-
-	data, err := c.doJSON(ctx, http.MethodGet, "/api/v3/klines", query)
-	if err != nil {
-		return nil, fmt.Errorf("binance fetch %s: %w", symbol, err)
-	}
-
-	var rows [][]json.RawMessage
-	if err := json.Unmarshal(data, &rows); err != nil {
-		return nil, fmt.Errorf("binance decode klines %s: %w", symbol, err)
-	}
-
-	now := time.Now().UTC()
-	candles := make([]Candle, 0, len(rows))
-	for _, row := range rows {
-		candle, closeTime, err := parseBinanceKline(symbol, interval, row)
-		if err != nil {
-			continue
+// Poll fetches each configured symbol and returns only bars that have closed
+// and were not yielded by an earlier call.
+func (b *Binance) Poll(ctx context.Context) ([]domain.Candle, error) {
+	var all []domain.Candle
+	for _, symbol := range b.config.Symbols {
+		if err := ctx.Err(); err != nil {
+			return all, err
 		}
-		// Binance includes the currently forming kline. Signal generation must
-		// only use closed bars so an unfinished candle cannot repaint a signal.
-		if closeTime.After(now) {
-			continue
-		}
-		candles = append(candles, candle)
-	}
-	sort.Slice(candles, func(i, j int) bool { return candles[i].Time.Before(candles[j].Time) })
-
-	// Return only candles not seen in an earlier poll, independently per
-	// symbol and interval.
-	key := binanceSymbol(symbol) + "\x00" + interval
-	c.mu.Lock()
-	lastTime := c.last[key]
-	newCandles := make([]Candle, 0, len(candles))
-	var latest time.Time
-	for _, candle := range candles {
-		if candle.Time.After(lastTime) {
-			newCandles = append(newCandles, candle)
-			if candle.Time.After(latest) {
-				latest = candle.Time
-			}
-		}
-	}
-	if !latest.IsZero() {
-		c.last[key] = latest
-	}
-	c.mu.Unlock()
-
-	return newCandles, nil
-}
-
-// FetchAllSymbols fetches completed candles for every configured symbol.
-func (c *BinanceClient) FetchAllSymbols(ctx context.Context) ([]Candle, error) {
-	var all []Candle
-	for _, symbol := range c.config.Symbols {
-		select {
-		case <-ctx.Done():
-			return all, ctx.Err()
-		default:
-		}
-		candles, err := c.FetchCandles(ctx, symbol)
+		candles, err := b.fetch(ctx, symbol)
 		if err != nil {
 			return all, err
 		}
 		all = append(all, candles...)
 	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].OpenTime.Before(all[j].OpenTime) })
 	return all, nil
 }
 
-// FetchQuote fetches the public best bid/ask book ticker for a symbol.
-func (c *BinanceClient) FetchQuote(ctx context.Context, symbol string) (Quote, error) {
+func (b *Binance) fetch(ctx context.Context, symbol string) ([]domain.Candle, error) {
+	canonical := binanceSymbol(symbol)
+	spec, err := resolve(canonical)
+	if err != nil {
+		return nil, err
+	}
+	timeframe := IntervalDuration(b.config.Interval)
+
 	query := url.Values{}
-	query.Set("symbol", binanceSymbol(symbol))
-	data, err := c.doJSON(ctx, http.MethodGet, "/api/v3/ticker/bookTicker", query)
+	query.Set("symbol", canonical)
+	query.Set("interval", b.config.Interval)
+	query.Set("limit", strconv.Itoa(b.config.limit()))
+	payload, err := b.doJSON(ctx, "/api/v3/klines", query)
 	if err != nil {
-		return Quote{}, fmt.Errorf("binance quote %s: %w", symbol, err)
+		return nil, fmt.Errorf("feed: binance fetch %s: %w", canonical, err)
 	}
 
-	var ticker struct {
-		BidPrice string `json:"bidPrice"`
-		AskPrice string `json:"askPrice"`
-	}
-	if err := json.Unmarshal(data, &ticker); err != nil {
-		return Quote{}, fmt.Errorf("binance decode quote %s: %w", symbol, err)
-	}
-	bid, err := strconv.ParseFloat(ticker.BidPrice, 64)
-	if err != nil || bid <= 0 {
-		return Quote{}, fmt.Errorf("binance quote %s: invalid bid", symbol)
-	}
-	ask, err := strconv.ParseFloat(ticker.AskPrice, 64)
-	if err != nil || ask <= 0 {
-		return Quote{}, fmt.Errorf("binance quote %s: invalid ask", symbol)
+	var rows [][]json.RawMessage
+	if err := json.Unmarshal(payload, &rows); err != nil {
+		return nil, fmt.Errorf("feed: binance decode %s: %w", canonical, err)
 	}
 
-	return Quote{
-		Symbol: symbol,
-		Bid:    bid,
-		Ask:    ask,
-		Price:  (bid + ask) / 2,
-		Time:   time.Now().UTC(),
-	}, nil
+	now := b.now().UTC()
+	candles := make([]domain.Candle, 0, len(rows))
+	for _, row := range rows {
+		candle, err := parseBinanceKline(row, canonical, spec, timeframe)
+		if err != nil {
+			continue
+		}
+		// Binance includes the forming kline. A signal from an unfinished
+		// bar repaints as the bar develops, so only closed bars are used.
+		if candle.CloseTime.After(now) {
+			continue
+		}
+		candles = append(candles, candle)
+	}
+	return b.cursor.advance(canonical+"\x00"+b.config.Interval, candles), nil
 }
 
-func (c *BinanceClient) doJSON(ctx context.Context, method, path string, query url.Values) ([]byte, error) {
-	requestURL := c.config.baseURL() + path
-	if len(query) > 0 {
-		requestURL += "?" + query.Encode()
-	}
-	req, err := http.NewRequestWithContext(ctx, method, requestURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	if c.config.APIKey != "" {
-		req.Header.Set("X-MBX-APIKEY", c.config.APIKey)
-	}
+// parseBinanceKline converts one kline row into a validated candle.
+//
+// Binance timestamps a kline by its OPEN and reports a close one millisecond
+// early (23:59:59.999 for a bar owning up to 24:00:00), so the owned interval
+// is derived from the open. Prices convert to integer ticks once, here.
+func parseBinanceKline(row []json.RawMessage, symbol string,
+	spec instrument.Spec, timeframe time.Duration) (domain.Candle, error) {
 
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if readErr != nil {
-		return nil, readErr
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	return body, nil
-}
-
-func parseBinanceKline(symbol, interval string, row []json.RawMessage) (Candle, time.Time, error) {
-	if len(row) < 7 {
-		return Candle{}, time.Time{}, errors.New("binance kline has fewer than 7 fields")
+	if len(row) < 6 {
+		return domain.Candle{}, errors.New("kline has fewer than 6 fields")
 	}
 	openMillis, err := parseBinanceInt(row[0])
 	if err != nil {
-		return Candle{}, time.Time{}, err
-	}
-	closeMillis, err := parseBinanceInt(row[6])
-	if err != nil {
-		return Candle{}, time.Time{}, err
+		return domain.Candle{}, err
 	}
 	values := make([]float64, 5)
 	for i := range values {
-		values[i], err = parseBinanceFloat(row[i+1])
-		if err != nil {
-			return Candle{}, time.Time{}, err
+		if values[i], err = parseBinanceFloat(row[i+1]); err != nil {
+			return domain.Candle{}, err
 		}
 	}
-	// Binance timestamps a kline by its open and reports a close one
-	// millisecond early (23:59:59.999 for a bar owning up to 24:00:00), so
-	// the owned interval is derived from the open instead.
-	open, close := resolveBarTimes(time.UnixMilli(openMillis), interval)
-	candle := Candle{
-		Symbol:    symbol,
-		Interval:  interval,
-		Open:      values[0],
-		High:      values[1],
-		Low:       values[2],
-		Close:     values[3],
-		Volume:    values[4],
-		Time:      open,
-		OpenTime:  open,
-		CloseTime: close,
+
+	openTime := time.UnixMilli(openMillis).UTC()
+	volume := uint64(values[4])
+	if volume == 0 {
+		volume = 1
+	}
+	candle := domain.Candle{
+		Source: "binance", Symbol: symbol, Timeframe: timeframe,
+		OpenTime: openTime, CloseTime: openTime.Add(timeframe),
+		Open:      domain.Price(spec.Ticks(values[0])),
+		High:      domain.Price(spec.Ticks(values[1])),
+		Low:       domain.Price(spec.Ticks(values[2])),
+		Close:     domain.Price(spec.Ticks(values[3])),
+		TickCount: volume,
 	}
 	if err := candle.Validate(); err != nil {
-		return Candle{}, time.Time{}, err
+		return domain.Candle{}, err
 	}
-	return candle, time.UnixMilli(closeMillis).UTC(), nil
+	return candle, nil
+}
+
+func (b *Binance) doJSON(ctx context.Context, path string, query url.Values) ([]byte, error) {
+	requestURL := b.config.baseURL() + path
+	if len(query) > 0 {
+		requestURL += "?" + query.Encode()
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if b.config.APIKey != "" {
+		request.Header.Set("X-MBX-APIKEY", b.config.APIKey)
+	}
+	response, err := b.client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return body, nil
 }
 
 func parseBinanceInt(raw json.RawMessage) (int64, error) {
@@ -304,11 +243,12 @@ func parseBinanceFloat(raw json.RawMessage) (float64, error) {
 }
 
 func binanceSymbol(symbol string) string {
-	return strings.ToUpper(strings.NewReplacer("/", "", "-", "", "_", "").Replace(strings.TrimSpace(symbol)))
+	return strings.ToUpper(strings.NewReplacer("/", "", "-", "", "_", "").
+		Replace(strings.TrimSpace(symbol)))
 }
 
-// DefaultBinanceSymbols returns liquid Spot pairs suitable for the signal
-// monitor's default crypto feed.
+// DefaultBinanceSymbols returns liquid Spot pairs for the monitor's default
+// crypto feed.
 func DefaultBinanceSymbols() []string {
 	return []string{"BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"}
 }

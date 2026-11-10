@@ -7,29 +7,100 @@ import (
 	"io"
 	"os"
 	"sort"
-	"time"
 
 	"tradex/internal/domain"
-	"tradex/internal/features"
 	"tradex/internal/marketdata"
-	"tradex/internal/research/derive"
-	"tradex/internal/session"
 )
 
+// RawCompileConfig fixes the one remaining raw-compilation policy choice:
+// the synthetic half-spread used to turn a MID-basis candle close into a
+// disclosed bid/ask for execution. The old ICC-era config additionally fixed
+// context/setup/confirmation timeframes and allowed sessions to drive a
+// hand-rolled structure-break derivation; that derivation is retired because
+// a scan.Detector already does its own pattern detection directly over the
+// raw candle window, so there is no separate multi-timeframe indication/
+// confirmation state machine left to configure.
 type RawCompileConfig struct {
-	Derivation               derive.Config `json:"derivation"`
-	BaseTimeframe            time.Duration `json:"base_timeframe,omitempty"`
-	ContextTimeframe         time.Duration `json:"context_timeframe"`
-	SetupTimeframe           time.Duration `json:"setup_timeframe"`
-	ConfirmationTimeframe    time.Duration `json:"confirmation_timeframe"`
-	AllowedSessions          []string      `json:"allowed_sessions"`
-	SyntheticHalfSpreadTicks int64         `json:"synthetic_half_spread_ticks"`
+	SyntheticHalfSpreadTicks int64 `json:"synthetic_half_spread_ticks"`
+}
+
+func (c RawCompileConfig) Validate() error {
+	if c.SyntheticHalfSpreadTicks < 0 {
+		return errors.New("raw synthetic spread cannot be negative")
+	}
+	return nil
 }
 
 type RawScenario struct {
 	Base    Scenario                 `json:"base"`
 	Dataset marketdata.CandleDataset `json:"dataset"`
 	Compile RawCompileConfig         `json:"compile"`
+}
+
+// CompileRaw turns a single-stream raw MID candle dataset directly into
+// EventCandle events (one scan.Stream advance per candle), each preceded by
+// a synthetic EventQuote at the same timestamp so a detected setup always
+// has a prior executable quote to size and risk-approve against. It
+// replaces the old ICC-specific H4/H1/confirmation structure-break
+// derivation entirely, per docs/MIGRATION_SCAN_REPLAY.md: a scan.Detector
+// already derives its own setups from the raw window, so relabelling that
+// derivation here would duplicate -- and could silently diverge from -- the
+// detector's own logic.
+func CompileRaw(raw RawScenario) (Scenario, error) {
+	if err := raw.Dataset.Validate(); err != nil {
+		return Scenario{}, err
+	}
+	if err := raw.Compile.Validate(); err != nil {
+		return Scenario{}, err
+	}
+	if raw.Dataset.Provenance.PriceBasis != marketdata.PriceMid {
+		return Scenario{}, errors.New("raw compilation requires MID candles for disclosed synthetic bid/ask")
+	}
+	if len(raw.Base.Events) != 0 || raw.Base.RawDataset != nil || len(raw.Base.ResampleReports) != 0 {
+		return Scenario{}, errors.New("raw scenario base must not contain events, another dataset, or resample reports")
+	}
+	if len(raw.Dataset.Streams) != 1 {
+		return Scenario{}, errors.New("raw compilation requires exactly one candle stream")
+	}
+	base := raw.Base
+	normalize(&base)
+	stream := raw.Dataset.Streams[0]
+	if stream.Symbol != base.Instrument.Symbol {
+		return Scenario{}, errors.New("raw candle symbol does not match scenario instrument")
+	}
+	if stream.Timeframe != base.DetectorParams.Timeframe {
+		return Scenario{}, errors.New("raw candle timeframe does not match the detector timeframe")
+	}
+	raw.Base = base
+
+	halfSpread := domain.Price(raw.Compile.SyntheticHalfSpreadTicks) * base.Instrument.TickSize
+	events := make([]Event, 0, len(stream.Candles)*2)
+	quoteSequence := uint64(0)
+	for _, candle := range stream.Candles {
+		if candle.Close <= halfSpread {
+			return Scenario{}, errors.New("synthetic spread is not valid at this candle's close")
+		}
+		quoteSequence++
+		quote := domain.Quote{
+			Source: raw.Dataset.Provenance.Feed, Symbol: candle.Symbol,
+			Bid: candle.Close - halfSpread, Ask: candle.Close + halfSpread,
+			At: candle.CloseTime, Sequence: quoteSequence,
+		}
+		events = append(events, Event{At: candle.CloseTime, Kind: EventQuote, Quote: &quote})
+		events = append(events, Event{At: candle.CloseTime, Kind: EventCandle, Candle: candlePointer(candle)})
+	}
+	if len(events) == 0 {
+		return Scenario{}, errors.New("raw dataset produced no candle events")
+	}
+
+	scenario := raw.Base
+	scenario.Events = events
+	datasetCopy := raw.Dataset
+	scenario.RawDataset = &datasetCopy
+	if err := scenario.Validate(); err != nil {
+		return Scenario{}, err
+	}
+	return scenario, nil
 }
 
 // CompileQuotes merges a validated broker-native bid/ask stream into an
@@ -136,240 +207,6 @@ func WriteScenarioNew(path string, scenario Scenario) (writeErr error) {
 		return fmt.Errorf("sync compiled scenario: %w", err)
 	}
 	return nil
-}
-
-func (c RawCompileConfig) Validate() error {
-	if err := c.Derivation.Validate(); err != nil {
-		return err
-	}
-	if c.ContextTimeframe <= c.SetupTimeframe || c.SetupTimeframe <= c.ConfirmationTimeframe ||
-		c.ConfirmationTimeframe <= 0 || len(c.AllowedSessions) == 0 || c.SyntheticHalfSpreadTicks < 0 {
-		return errors.New("invalid raw ICC timeframe, session, or spread configuration")
-	}
-	if c.BaseTimeframe < 0 || c.BaseTimeframe >= c.ConfirmationTimeframe {
-		return errors.New("raw base timeframe must be below the confirmation timeframe")
-	}
-	validSessions := map[string]bool{"sydney": true, "tokyo": true, "london": true, "new_york": true}
-	for _, name := range c.AllowedSessions {
-		if !validSessions[name] {
-			return fmt.Errorf("unknown raw ICC session %q", name)
-		}
-	}
-	return nil
-}
-
-// CompileRaw derives a single ICC research lifecycle from completed raw H4,
-// H1, and confirmation candles. It does not accept caller-labelled breaks.
-func CompileRaw(raw RawScenario) (Scenario, error) {
-	if err := raw.Dataset.Validate(); err != nil {
-		return Scenario{}, err
-	}
-	if err := raw.Compile.Validate(); err != nil {
-		return Scenario{}, err
-	}
-	if raw.Dataset.Provenance.PriceBasis != marketdata.PriceMid {
-		return Scenario{}, errors.New("raw ICC compilation requires MID candles for disclosed synthetic bid/ask")
-	}
-	if len(raw.Base.Events) != 0 || raw.Base.RawDataset != nil || len(raw.Base.ResampleReports) != 0 {
-		return Scenario{}, errors.New("raw scenario base must not contain events, another dataset, or resample reports")
-	}
-	var resampleReports []marketdata.ResampleReport
-	if raw.Compile.BaseTimeframe > 0 {
-		if len(raw.Dataset.Streams) != 1 || raw.Dataset.Streams[0].Timeframe != raw.Compile.BaseTimeframe {
-			return Scenario{}, errors.New("raw resampling requires exactly the configured base timeframe stream")
-		}
-		resampled, reports, err := marketdata.ResampleDataset(raw.Dataset, []time.Duration{
-			raw.Compile.ConfirmationTimeframe, raw.Compile.SetupTimeframe, raw.Compile.ContextTimeframe,
-		})
-		if err != nil {
-			return Scenario{}, fmt.Errorf("resample raw ICC dataset: %w", err)
-		}
-		raw.Dataset = resampled
-		resampleReports = reports
-	}
-	base := raw.Base
-	normalize(&base)
-	if base.ICC.SetupTimeframe != raw.Compile.SetupTimeframe ||
-		base.ICC.ConfirmationTimeframe != raw.Compile.ConfirmationTimeframe {
-		return Scenario{}, errors.New("raw compiler and ICC strategy timeframes differ")
-	}
-	raw.Base = base
-	for _, stream := range raw.Dataset.Streams {
-		if stream.Symbol != raw.Base.Instrument.Symbol {
-			return Scenario{}, errors.New("raw candle symbol does not match scenario instrument")
-		}
-	}
-	report, err := derive.Structure(raw.Dataset, raw.Compile.Derivation)
-	if err != nil {
-		return Scenario{}, err
-	}
-	marketSessions, err := session.Defaults()
-	if err != nil {
-		return Scenario{}, err
-	}
-	allowed := make(map[string]bool, len(raw.Compile.AllowedSessions))
-	for _, name := range raw.Compile.AllowedSessions {
-		allowed[name] = true
-	}
-	isAllowed := func(at time.Time) bool {
-		for _, active := range marketSessions.Active(at) {
-			if allowed[active] {
-				return true
-			}
-		}
-		return false
-	}
-
-	var h4Trend, h1Trend features.Trend
-	var latestH1High, latestH1Low *features.Swing
-	var direction features.BreakDirection
-	var indicationLevel, invalidation domain.Price
-	indicationAt := time.Time{}
-	corrected, invalidated, completed := false, false, false
-	setupBars, indications := 0, 0
-	hasSignal := false
-	lastConfirmationAt := time.Time{}
-	events := make([]Event, 0)
-	quoteSequence := uint64(0)
-	seenTimeframes := map[time.Duration]bool{}
-
-	for _, derived := range report.Events {
-		seenTimeframes[derived.Timeframe] = true
-		switch derived.Timeframe {
-		case raw.Compile.ContextTimeframe:
-			h4Trend = derived.Trend
-		case raw.Compile.SetupTimeframe:
-			h1Trend = derived.Trend
-			for index := range derived.ConfirmedSwings {
-				swing := derived.ConfirmedSwings[index]
-				if swing.Kind == features.SwingHigh {
-					copy := swing
-					latestH1High = &copy
-				} else {
-					copy := swing
-					latestH1Low = &copy
-				}
-			}
-			if completed || invalidated {
-				direction = ""
-				indicationLevel, invalidation = 0, 0
-				indicationAt = time.Time{}
-				corrected, invalidated, completed = false, false, false
-				setupBars = 0
-			}
-			if direction == "" {
-				if !isAllowed(derived.At) {
-					continue
-				}
-				for _, structureBreak := range derived.StructureBreaks {
-					candidateInvalidation, aligned := rawIndicationGeometry(structureBreak.Direction, h4Trend, h1Trend, latestH1High, latestH1Low)
-					if structureBreak.Direction == features.BreakBullish && candidateInvalidation >= structureBreak.BrokenSwing.Price ||
-						structureBreak.Direction == features.BreakBearish && candidateInvalidation <= structureBreak.BrokenSwing.Price {
-						aligned = false
-					}
-					if !aligned {
-						continue
-					}
-					direction = structureBreak.Direction
-					indications++
-					indicationLevel = structureBreak.BrokenSwing.Price
-					invalidation = candidateInvalidation
-					indicationAt = derived.At
-					events = append(events,
-						Event{At: derived.At, Kind: EventContext, H4Trend: h4Trend, H1Trend: h1Trend},
-						Event{At: derived.At, Kind: EventIndication, Direction: direction, BrokenLevel: indicationLevel,
-							InvalidationPrice: invalidation, AllowedSession: true, Candle: candlePointer(derived.Candle)},
-					)
-					break
-				}
-				continue
-			}
-			if !derived.At.After(indicationAt) {
-				continue
-			}
-			events = append(events, Event{At: derived.At, Kind: EventSetupCandle, Candle: candlePointer(derived.Candle)})
-			setupBars++
-			if setupBars > raw.Base.ICC.MaxCorrectionBars {
-				invalidated = true
-				continue
-			}
-			if direction == features.BreakBullish {
-				invalidated = derived.Candle.Close <= invalidation
-				corrected = corrected || derived.Candle.Low <= indicationLevel
-			} else {
-				invalidated = derived.Candle.Close >= invalidation
-				corrected = corrected || derived.Candle.High >= indicationLevel
-			}
-		case raw.Compile.ConfirmationTimeframe:
-			if hasSignal && derived.At.After(lastConfirmationAt) {
-				events = append(events, Event{At: derived.At, Kind: EventCandle, Candle: candlePointer(derived.Candle)})
-			}
-			if completed {
-				continue
-			}
-			if direction == "" || !corrected || invalidated || !isAllowed(derived.At) {
-				continue
-			}
-			for _, structureBreak := range derived.StructureBreaks {
-				if structureBreak.Direction != direction || !reclaims(direction, derived.Candle.Close, indicationLevel) {
-					continue
-				}
-				halfSpread := domain.Price(raw.Compile.SyntheticHalfSpreadTicks) * raw.Base.Instrument.TickSize
-				if derived.Candle.Close <= halfSpread {
-					return Scenario{}, errors.New("synthetic spread is not valid at confirmation price")
-				}
-				quoteSequence++
-				quote := domain.Quote{Source: raw.Dataset.Provenance.Feed, Symbol: derived.Symbol,
-					Bid: derived.Candle.Close - halfSpread, Ask: derived.Candle.Close + halfSpread,
-					At: derived.At, Sequence: quoteSequence}
-				events = append(events,
-					Event{At: derived.At, Kind: EventQuote, Quote: &quote},
-					Event{At: derived.At, Kind: EventConfirmation, Direction: direction,
-						AllowedSession: true, Candle: candlePointer(derived.Candle)},
-				)
-				completed = true
-				hasSignal = true
-				lastConfirmationAt = derived.At
-				break
-			}
-		}
-	}
-	for _, timeframe := range []time.Duration{raw.Compile.ContextTimeframe, raw.Compile.SetupTimeframe, raw.Compile.ConfirmationTimeframe} {
-		if !seenTimeframes[timeframe] {
-			return Scenario{}, fmt.Errorf("raw dataset is missing required timeframe %s", timeframe)
-		}
-	}
-	if indications == 0 {
-		return Scenario{}, errors.New("raw dataset produced no aligned ICC indication")
-	}
-
-	scenario := raw.Base
-	scenario.Events = events
-	datasetCopy := raw.Dataset
-	scenario.RawDataset = &datasetCopy
-	scenario.ResampleReports = resampleReports
-	if err := scenario.Validate(); err != nil {
-		return Scenario{}, err
-	}
-	return scenario, nil
-}
-
-func rawIndicationGeometry(
-	direction features.BreakDirection,
-	h4, h1 features.Trend,
-	latestHigh, latestLow *features.Swing,
-) (domain.Price, bool) {
-	if direction == features.BreakBullish && h4 == features.TrendBullish && h1 == features.TrendBullish && latestLow != nil {
-		return latestLow.Price, true
-	}
-	if direction == features.BreakBearish && h4 == features.TrendBearish && h1 == features.TrendBearish && latestHigh != nil {
-		return latestHigh.Price, true
-	}
-	return 0, false
-}
-
-func reclaims(direction features.BreakDirection, close, level domain.Price) bool {
-	return direction == features.BreakBullish && close > level || direction == features.BreakBearish && close < level
 }
 
 func candlePointer(candle domain.Candle) *domain.Candle {

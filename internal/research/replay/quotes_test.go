@@ -10,7 +10,7 @@ import (
 )
 
 func TestCompileQuotesMergesBrokerQuotesBeforeSameTimeStrategyEvent(t *testing.T) {
-	base, err := Load(filepath.Join("testdata", "eurusd_icc_win.json"))
+	base, err := Load(filepath.Join("testdata", "eurusd_continuation_win.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,12 +25,12 @@ func TestCompileQuotesMergesBrokerQuotesBeforeSameTimeStrategyEvent(t *testing.T
 		SchemaVersion: marketdata.QuoteDatasetSchema,
 		Provenance: marketdata.QuoteProvenance{
 			DatasetID: "quotes-for-replay", Vendor: "fixture", Feed: "paper-feed", Broker: "Pepperstone",
-			RetrievedAt: time.Date(2026, 8, 18, 11, 0, 0, 0, time.UTC), SourceTimezone: "UTC",
+			RetrievedAt: time.Date(2026, 9, 1, 11, 0, 0, 0, time.UTC), SourceTimezone: "UTC",
 			TimestampBasis: "UTC_EVENT_TIME", RawArtifactSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			LicenseReference: "fixture-license",
 		},
 		Streams: []marketdata.QuoteStream{{Symbol: "EURUSD", Quotes: []domain.Quote{
-			{Source: "paper-feed", Symbol: "EURUSD", Bid: 108400, Ask: 108402, At: strategyTime, Sequence: 1},
+			{Source: "paper-feed", Symbol: "EURUSD", Bid: 108006, Ask: 108008, At: strategyTime, Sequence: 1},
 		}}},
 	}
 	compiled, err := CompileQuotes(base, dataset)

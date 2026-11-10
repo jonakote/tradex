@@ -18,6 +18,7 @@ import (
 // SignalsConfig is the JSON configuration for the signals command.
 type SignalsConfig struct {
 	Binance      *feed.BinanceConfig    `json:"binance,omitempty"`
+	Capital      *feed.CapitalConfig    `json:"capital,omitempty"`
 	TwelveData   *feed.TwelveDataConfig `json:"twelve_data,omitempty"`
 	FCS          *feed.FCSConfig        `json:"fcs,omitempty"`
 	Finnhub      *feed.FinnhubConfig    `json:"finnhub,omitempty"`
@@ -31,6 +32,12 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 	cfg := defaultSignalsConfig()
 
 	if len(args) >= 1 {
+		// A supplied config file IS the configuration. Starting from the
+		// defaults and decoding over them would silently leave every
+		// unmentioned source enabled: a file naming only Capital.com would
+		// still poll Binance and open the webhook port, and the operator
+		// would be watching feeds they did not ask for.
+		cfg = SignalsConfig{}
 		file, err := os.Open(args[0])
 		if err != nil {
 			fmt.Fprintf(stderr, "tradex signals: open config: %v\n", err)
@@ -49,6 +56,24 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 	// supplied, pass it through as the standard Binance API-key header.
 	if cfg.Binance != nil && cfg.Binance.APIKey == "" {
 		cfg.Binance.APIKey = os.Getenv("BINANCE_API_KEY")
+	}
+
+	// Capital.com credentials come from the environment unless the config
+	// supplies them, so a config file can be committed without secrets.
+	// Password is the API key's custom password, not the account login.
+	if cfg.Capital != nil {
+		if cfg.Capital.APIKey == "" {
+			cfg.Capital.APIKey = os.Getenv("CAPITAL_API_KEY")
+		}
+		if cfg.Capital.Identifier == "" {
+			cfg.Capital.Identifier = os.Getenv("CAPITAL_IDENTIFIER")
+		}
+		if cfg.Capital.Password == "" {
+			cfg.Capital.Password = os.Getenv("CAPITAL_PASSWORD")
+		}
+		if cfg.Capital.BaseURL == "" {
+			cfg.Capital.BaseURL = os.Getenv("CAPITAL_BASE_URL")
+		}
 	}
 
 	// Check for API keys from env if not in config
@@ -133,9 +158,9 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 	// Start Binance public Spot kline poller. Only completed candles are
 	// forwarded, so an in-progress bar cannot repaint a signal.
 	if cfg.Binance != nil {
-		binanceClient, err := feed.NewBinanceClient(*cfg.Binance)
+		binanceSource, err := feed.NewBinance(*cfg.Binance)
 		if err != nil {
-			fmt.Fprintf(stderr, "tradex signals: binance client: %v\n", err)
+			fmt.Fprintf(stderr, "tradex signals: binance source: %v\n", err)
 			return 1
 		}
 
@@ -146,7 +171,7 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 		go func() {
 			poll := func() {
 				start := time.Now()
-				candles, err := binanceClient.FetchAllSymbols(ctx)
+				candles, err := binanceSource.Poll(ctx)
 				if err != nil && ctx.Err() == nil {
 					fmt.Fprintf(stdout, "%s [binance-poll] failed after %s: %v\n",
 						time.Now().UTC().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond), err)
@@ -160,6 +185,54 @@ func runSignals(args []string, stdout, stderr io.Writer) int {
 			}
 			poll()
 			ticker := time.NewTicker(binancePollInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					poll()
+				}
+			}
+		}()
+	}
+
+	// Start the Capital.com poller. Unlike Dukascopy this feed is real time,
+	// so a 1h or 4h limit entry is still open when the bar arrives. It is
+	// market data only: the source cannot reach an order endpoint.
+	if cfg.Capital != nil {
+		capitalSource, err := feed.NewCapital(*cfg.Capital)
+		if err != nil {
+			fmt.Fprintf(stderr, "tradex signals: capital.com source: %v\n", err)
+			return 1
+		}
+
+		// Default to one poll per bar; a shorter interval only re-reads
+		// bars the cursor already suppressed.
+		capitalPollInterval := pollIntervalOrDefault(cfg.PollInterval, 5*time.Minute)
+		if bar := feed.IntervalDuration(capitalSource.Interval()); bar > 0 && bar < capitalPollInterval {
+			capitalPollInterval = bar
+		}
+		fmt.Fprintf(stdout, "  Capital:  %d symbols (%s, poll every %s, real time)\n",
+			len(capitalSource.Symbols()), capitalSource.Interval(), capitalPollInterval)
+
+		go func() {
+			poll := func() {
+				start := time.Now()
+				candles, err := capitalSource.Poll(ctx)
+				if err != nil && ctx.Err() == nil {
+					fmt.Fprintf(stdout, "%s [capital-poll] failed after %s: %v\n",
+						time.Now().UTC().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond), err)
+					return
+				}
+				fmt.Fprintf(stdout, "%s [capital-poll] ok in %s: %d candles\n",
+					time.Now().UTC().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond), len(candles))
+				for _, candle := range candles {
+					engine.ProcessCandle(candle)
+				}
+			}
+			poll()
+			ticker := time.NewTicker(capitalPollInterval)
 			defer ticker.Stop()
 			for {
 				select {

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"tradex/internal/domain"
 	"tradex/internal/feed"
 	"tradex/internal/instrument"
 )
@@ -109,12 +110,16 @@ func (f *LiveFeed) Symbols() []string { return f.config.Symbols }
 // FetchAllSymbols returns candles not seen in an earlier poll. Only bars
 // whose every spanned hour has been published are returned, so an
 // under-covered bar can never be mistaken for a complete one.
-func (f *LiveFeed) FetchAllSymbols(ctx context.Context) ([]feed.Candle, error) {
+//
+// TickCandles already builds domain.Candle directly from raw ticks, in
+// integer ticks at the verified precision; this method only deduplicates
+// against the previous poll and never reconstructs or reconverts a price.
+func (f *LiveFeed) FetchAllSymbols(ctx context.Context) ([]domain.Candle, error) {
 	timeframe := feed.IntervalDuration(f.config.Interval)
 	now := f.client.clock().UTC()
 	from := now.Add(-f.config.lookback())
 
-	var result []feed.Candle
+	var result []domain.Candle
 	for _, symbol := range f.config.Symbols {
 		if err := ctx.Err(); err != nil {
 			return result, err
@@ -135,19 +140,7 @@ func (f *LiveFeed) FetchAllSymbols(ctx context.Context) ([]feed.Candle, error) {
 			if !candle.OpenTime.After(seen) {
 				continue
 			}
-			result = append(result, feed.Candle{
-				Symbol:   symbol,
-				Interval: f.config.Interval,
-				// Integer ticks converted once, at the boundary.
-				Open:      spec.Price(int64(candle.Open)),
-				High:      spec.Price(int64(candle.High)),
-				Low:       spec.Price(int64(candle.Low)),
-				Close:     spec.Price(int64(candle.Close)),
-				Volume:    float64(candle.TickCount),
-				Time:      candle.OpenTime,
-				OpenTime:  candle.OpenTime,
-				CloseTime: candle.CloseTime,
-			})
+			result = append(result, candle)
 			if candle.OpenTime.After(latest) {
 				latest = candle.OpenTime
 			}
@@ -157,6 +150,6 @@ func (f *LiveFeed) FetchAllSymbols(ctx context.Context) ([]feed.Candle, error) {
 		}
 		f.mu.Unlock()
 	}
-	sort.SliceStable(result, func(a, b int) bool { return result[a].Time.Before(result[b].Time) })
+	sort.SliceStable(result, func(a, b int) bool { return result[a].OpenTime.Before(result[b].OpenTime) })
 	return result, nil
 }

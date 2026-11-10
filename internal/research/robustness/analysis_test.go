@@ -124,7 +124,7 @@ func TestConfigAndSampleSizeFailClosed(t *testing.T) {
 }
 
 func TestSharedRobustnessUsesCombinedAccountTradePath(t *testing.T) {
-	base, err := replay.Load(filepath.Join("..", "replay", "testdata", "eurusd_icc_win.json"))
+	base, err := replay.Load(filepath.Join("..", "replay", "testdata", "eurusd_continuation_win.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestSharedRobustnessUsesCombinedAccountTradePath(t *testing.T) {
 
 func syntheticReplayResult(t *testing.T, pnls []int64) replay.Result {
 	t.Helper()
-	scenario, err := replay.Load(filepath.Join("..", "replay", "testdata", "eurusd_icc_win.json"))
+	scenario, err := replay.Load(filepath.Join("..", "replay", "testdata", "eurusd_continuation_win.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

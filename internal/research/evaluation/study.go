@@ -118,14 +118,16 @@ func ManifestFor(study Study) (experiment.Manifest, error) {
 	}
 	first := study.Candidates[0].Scenario
 	type strategyDefinition struct {
-		ID        string
-		ICC       any
-		Execution any
+		ID             string
+		Detector       any
+		DetectorParams any
+		Execution      any
 	}
 	strategies := make([]strategyDefinition, 0, len(study.Candidates))
 	for _, candidate := range study.Candidates {
 		strategies = append(strategies, strategyDefinition{
-			ID: candidate.ID, ICC: candidate.Scenario.ICC, Execution: candidate.Scenario.Execution,
+			ID: candidate.ID, Detector: candidate.Scenario.Detector, DetectorParams: candidate.Scenario.DetectorParams,
+			Execution: candidate.Scenario.Execution,
 		})
 	}
 	dataset := struct {
@@ -160,6 +162,11 @@ func datasetHash(scenario replay.Scenario) (string, error) {
 	}{scenario.Events, scenario.RawDataset, scenario.ResampleReports})
 }
 
+// splitCycles partitions the event stream into per-bar units: one
+// EventCandle (closed bar) plus whatever quote/market-status events
+// immediately precede it. A scan.Detector's lifecycle has no ICC-style
+// context/confirmation cycle boundary to split on, so the walk-forward
+// fold unit is the bar itself -- the atomic unit scan.Stream advances on.
 func splitCycles(events []replay.Event) ([][]replay.Event, error) {
 	if len(events) == 0 {
 		return nil, errors.New("event dataset is empty")
@@ -169,35 +176,19 @@ func splitCycles(events []replay.Event) ([][]replay.Event, error) {
 			return nil, fmt.Errorf("event dataset is out of order at index %d", index)
 		}
 	}
-	firstContext := -1
-	for index := range events {
-		if events[index].Kind == replay.EventContext {
-			firstContext = index
-			break
-		}
-	}
-	if firstContext < 0 {
-		return nil, errors.New("event dataset has no context event")
-	}
 	cycles := make([][]replay.Event, 0)
 	start := 0
-	for index := firstContext + 1; index < len(events); index++ {
-		if events[index].Kind == replay.EventContext {
-			cycles = append(cycles, events[start:index])
-			start = index
+	for index, event := range events {
+		if event.Kind == replay.EventCandle {
+			cycles = append(cycles, events[start:index+1])
+			start = index + 1
 		}
 	}
-	cycles = append(cycles, events[start:])
-	for index, cycle := range cycles {
-		confirmations := 0
-		for _, event := range cycle {
-			if event.Kind == replay.EventConfirmation {
-				confirmations++
-			}
-		}
-		if confirmations != 1 {
-			return nil, fmt.Errorf("cycle %d must contain exactly one confirmation, got %d", index, confirmations)
-		}
+	if start != len(events) {
+		return nil, errors.New("event dataset has trailing events after its last candle; every walk-forward cycle must close on a candle boundary")
+	}
+	if len(cycles) == 0 {
+		return nil, errors.New("event dataset has no candle (bar) cycles")
 	}
 	return cycles, nil
 }

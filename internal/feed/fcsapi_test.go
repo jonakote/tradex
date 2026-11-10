@@ -84,8 +84,9 @@ func TestFCSFetchCandlesFromFakeServer(t *testing.T) {
 	if candles[0].Symbol != "XAG/USD" {
 		t.Fatalf("unexpected symbol: %s", candles[0].Symbol)
 	}
-	if candles[0].Close != 23.70 && candles[1].Close != 23.70 {
-		t.Fatalf("unexpected close values: %f, %f", candles[0].Close, candles[1].Close)
+	// XAG/USD is verified at 3 digits: 23.70 is 23700 integer ticks.
+	if candles[0].Close != 23700 && candles[1].Close != 23700 {
+		t.Fatalf("unexpected close values: %d, %d", candles[0].Close, candles[1].Close)
 	}
 }
 

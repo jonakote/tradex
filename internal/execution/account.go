@@ -30,7 +30,11 @@ func NewAccount(limits config.Risk, initialEquityMinor int64) (*Account, error) 
 	return &Account{risk: engine, tracker: tracker}, nil
 }
 
-func (a *Account) PrepareICC(plan ICCPlan, request ICCRequest) (domain.ApprovedOrder, risk.Decision, error) {
+// PrepareSetup views the account, prices/sizes/risk-approves a scan.Setup,
+// and reserves the estimated loss on approval, under a serialized lock so a
+// shared account cannot approve two proposals against the same stale
+// snapshot.
+func (a *Account) PrepareSetup(plan SetupPlan, request SetupRequest) (domain.ApprovedOrder, risk.Decision, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	view, err := a.tracker.View(request.Now, request.Market.Instrument.Symbol)
@@ -46,7 +50,7 @@ func (a *Account) PrepareICC(plan ICCPlan, request ICCRequest) (domain.ApprovedO
 	request.Context.OpenPositions = view.OpenPositions
 	request.Context.SymbolOpenPositions = view.SymbolOpenPositions
 	request.Context.BucketOpenRiskMinor = view.BucketOpenRiskMinor
-	approved, decision, err := PrepareICC(plan, a.risk, request)
+	approved, decision, err := PrepareSetup(plan, a.risk, request)
 	if err != nil || !decision.Approved {
 		return approved, decision, err
 	}

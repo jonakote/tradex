@@ -1,6 +1,7 @@
 package replay
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,40 +19,36 @@ import (
 	"tradex/internal/economics"
 	"tradex/internal/execution"
 	"tradex/internal/experiment"
-	"tradex/internal/features"
+	"tradex/internal/instrument"
 	"tradex/internal/journal"
 	"tradex/internal/marketdata"
 	"tradex/internal/portfolio"
 	"tradex/internal/risk"
-	"tradex/internal/strategy/icc"
+	"tradex/internal/strategy/scan"
 )
 
 type EventKind string
 
 const (
-	EventContext      EventKind = "CONTEXT"
-	EventIndication   EventKind = "INDICATION"
-	EventSetupCandle  EventKind = "SETUP_CANDLE"
-	EventQuote        EventKind = "QUOTE"
-	EventConfirmation EventKind = "CONFIRMATION"
 	EventCandle       EventKind = "EXECUTION_CANDLE"
+	EventQuote        EventKind = "QUOTE"
 	EventMarketStatus EventKind = "MARKET_STATUS"
 )
 
+// legacyICCEventKinds are the ICC-only event kinds this schema retired. They
+// must fail with an explicit migration error, never be silently reinterpreted.
+var legacyICCEventKinds = map[EventKind]bool{
+	"CONTEXT": true, "INDICATION": true, "SETUP_CANDLE": true, "CONFIRMATION": true,
+}
+
 type Event struct {
-	At                time.Time               `json:"at"`
-	Kind              EventKind               `json:"kind"`
-	H4Trend           features.Trend          `json:"h4_trend,omitempty"`
-	H1Trend           features.Trend          `json:"h1_trend,omitempty"`
-	Direction         features.BreakDirection `json:"direction,omitempty"`
-	BrokenLevel       domain.Price            `json:"broken_level,omitempty"`
-	InvalidationPrice domain.Price            `json:"invalidation_price,omitempty"`
-	AllowedSession    bool                    `json:"allowed_session,omitempty"`
-	Candle            *domain.Candle          `json:"candle,omitempty"`
-	Quote             *domain.Quote           `json:"quote,omitempty"`
-	AvailableQuantity *int64                  `json:"available_quantity,omitempty"`
-	HalfSpreadTicks   *int64                  `json:"half_spread_ticks,omitempty"`
-	MarketOpen        *bool                   `json:"market_open,omitempty"`
+	At                time.Time      `json:"at"`
+	Kind              EventKind      `json:"kind"`
+	Candle            *domain.Candle `json:"candle,omitempty"`
+	Quote             *domain.Quote  `json:"quote,omitempty"`
+	AvailableQuantity *int64         `json:"available_quantity,omitempty"`
+	HalfSpreadTicks   *int64         `json:"half_spread_ticks,omitempty"`
+	MarketOpen        *bool          `json:"market_open,omitempty"`
 }
 
 func (e Event) EventTime() time.Time { return e.At }
@@ -66,6 +63,43 @@ type PaperSettings struct {
 	Rollover                       paper.RolloverConfig `json:"rollover"`
 }
 
+// DetectorParams fixes the scan.Stream lifecycle parameters a replay
+// scenario runs the chosen detector under: the bar timeframe, how long an
+// unfilled limit remains armed, the time-stop for a stalled stop/target
+// position, and the spread floor handed to the detector's own cost gate.
+type DetectorParams struct {
+	Timeframe   time.Duration `json:"timeframe"`
+	ExpiryBars  int           `json:"expiry_bars"`
+	MaxHoldBars int           `json:"max_hold_bars"`
+	SpreadTicks int64         `json:"spread_ticks"`
+}
+
+func (p DetectorParams) Validate() error {
+	if p.Timeframe <= 0 {
+		return errors.New("detector timeframe must be positive")
+	}
+	if p.ExpiryBars < 1 || p.MaxHoldBars < 1 {
+		return errors.New("detector expiry and max-hold bars must be positive")
+	}
+	if p.SpreadTicks < 0 {
+		return errors.New("detector spread ticks cannot be negative")
+	}
+	return nil
+}
+
+// btParams adapts DetectorParams into the scan.BTParams shape scan.Stream
+// requires. Costs/RiskUnitTicks/RiskMinorPerTrade/InitialEquityMinor are
+// scan.Backtest-only measurement concepts the Stream lifecycle itself never
+// reads; replay supplies the minimum positive placeholders Validate requires
+// and relies on paper.Broker + execution.Account for every real cost, size
+// and risk figure.
+func (p DetectorParams) btParams() scan.BTParams {
+	return scan.BTParams{
+		SpreadTicks: p.SpreadTicks, ExpiryBars: p.ExpiryBars, MaxHoldBars: p.MaxHoldBars,
+		RiskUnitTicks: 1, RiskMinorPerTrade: 1, InitialEquityMinor: 1,
+	}
+}
+
 type Scenario struct {
 	Name               string                        `json:"name"`
 	InitialEquityMinor int64                         `json:"initial_equity_minor"`
@@ -73,8 +107,9 @@ type Scenario struct {
 	PriceValue         economics.PriceValue          `json:"price_value"`
 	Paper              PaperSettings                 `json:"paper"`
 	Risk               config.Risk                   `json:"risk"`
-	ICC                icc.Config                    `json:"icc"`
-	Execution          execution.ICCPlan             `json:"execution"`
+	Detector           scan.Config                   `json:"detector"`
+	DetectorParams     DetectorParams                `json:"detector_params"`
+	Execution          execution.SetupPlan           `json:"execution"`
 	Events             []Event                       `json:"events"`
 	RawDataset         *marketdata.CandleDataset     `json:"raw_dataset,omitempty"`
 	QuoteDataset       *marketdata.QuoteDataset      `json:"quote_dataset,omitempty"`
@@ -93,8 +128,18 @@ func Load(path string) (Scenario, error) {
 }
 
 func Decode(reader io.Reader) (Scenario, error) {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return Scenario{}, err
+	}
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(data, &probe); err == nil {
+		if _, has := probe["icc"]; has {
+			return Scenario{}, errors.New("ICC configuration/field is no longer supported, migrate to a detector config (Scenario.Detector)")
+		}
+	}
 	var scenario Scenario
-	decoder := json.NewDecoder(reader)
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&scenario); err != nil {
 		return Scenario{}, fmt.Errorf("decode replay scenario: %w", err)
@@ -130,8 +175,14 @@ func (s Scenario) Validate() error {
 	if err := s.Risk.Validate(); err != nil {
 		return err
 	}
-	if err := s.ICC.Validate(); err != nil {
+	if _, err := s.Detector.Build(); err != nil {
+		return fmt.Errorf("validate detector config: %w", err)
+	}
+	if err := s.DetectorParams.Validate(); err != nil {
 		return err
+	}
+	if _, ok := instrument.Lookup(s.Instrument.Symbol); !ok {
+		return errors.New("scenario instrument is not a canonical, registry-verified instrument")
 	}
 	if err := s.Execution.Validate(); err != nil {
 		return err
@@ -189,11 +240,7 @@ func (s Scenario) Validate() error {
 			return fmt.Errorf("scenario event %d has execution conditions for another event kind", index)
 		}
 		switch event.Kind {
-		case EventContext:
-			if event.H4Trend == features.TrendNeutral || event.H1Trend == features.TrendNeutral {
-				return fmt.Errorf("scenario context event %d is neutral", index)
-			}
-		case EventIndication, EventSetupCandle, EventConfirmation, EventCandle:
+		case EventCandle:
 			if event.Candle == nil || !event.At.Equal(event.Candle.CloseTime) {
 				return fmt.Errorf("scenario candle event %d is missing or time-mismatched", index)
 			}
@@ -203,7 +250,10 @@ func (s Scenario) Validate() error {
 			if err := event.Candle.Validate(); err != nil {
 				return fmt.Errorf("scenario candle event %d: %w", index, err)
 			}
-			if event.Kind == EventCandle && event.HalfSpreadTicks != nil && *event.HalfSpreadTicks < 0 {
+			if event.Candle.Timeframe != s.DetectorParams.Timeframe {
+				return fmt.Errorf("scenario candle event %d does not match the detector timeframe", index)
+			}
+			if event.HalfSpreadTicks != nil && *event.HalfSpreadTicks < 0 {
 				return fmt.Errorf("scenario candle event %d has negative spread", index)
 			}
 		case EventQuote:
@@ -225,6 +275,9 @@ func (s Scenario) Validate() error {
 				return fmt.Errorf("scenario market-status event %d has no state", index)
 			}
 		default:
+			if legacyICCEventKinds[event.Kind] {
+				return fmt.Errorf("scenario event %d uses ICC event kind %q; ICC configuration/field is no longer supported, migrate to a detector config", index, event.Kind)
+			}
 			return fmt.Errorf("scenario event %d has unknown kind %q", index, event.Kind)
 		}
 	}
@@ -235,23 +288,20 @@ func normalize(scenario *Scenario) {
 	if scenario.Risk.RiskPerTradeBPS == 0 {
 		scenario.Risk = config.DefaultRisk()
 	}
-	if scenario.ICC.SetupTimeframe == 0 {
-		scenario.ICC = icc.DefaultConfig()
-	}
 	scenario.Execution.AccountID = scenario.Paper.AccountID
 	scenario.Execution.PriceValue = scenario.PriceValue
 }
 
 type Result struct {
-	Scenario      string               `json:"scenario"`
-	Manifest      experiment.Manifest  `json:"manifest"`
-	Transitions   []icc.Transition     `json:"transitions"`
-	Decisions     []risk.Decision      `json:"decisions"`
-	Opportunities []Opportunity        `json:"opportunities"`
-	Orders        []domain.BrokerOrder `json:"orders"`
-	Fills         []domain.Fill        `json:"fills"`
-	Report        analytics.Report     `json:"report"`
-	Portfolio     portfolio.View       `json:"portfolio"`
+	Scenario      string                `json:"scenario"`
+	Manifest      experiment.Manifest   `json:"manifest"`
+	Lifecycle     []scan.LifecycleEvent `json:"lifecycle"`
+	Decisions     []risk.Decision       `json:"decisions"`
+	Opportunities []Opportunity         `json:"opportunities"`
+	Orders        []domain.BrokerOrder  `json:"orders"`
+	Fills         []domain.Fill         `json:"fills"`
+	Report        analytics.Report      `json:"report"`
+	Portfolio     portfolio.View        `json:"portfolio"`
 }
 
 func Run(ctx context.Context, scenario Scenario, auditPath string) (result Result, runErr error) {
@@ -281,21 +331,21 @@ func ManifestFor(scenario Scenario) (experiment.Manifest, error) {
 		return experiment.Manifest{}, err
 	}
 	strategyDefinition := struct {
-		ICC             icc.Config
-		IntentTTL       time.Duration
-		RewardRiskBPS   int64
-		StopBufferTicks int64
-	}{scenario.ICC, scenario.Execution.IntentTTL, scenario.Execution.RewardRiskBPS, scenario.Execution.StopBufferTicks}
+		Detector       scan.Config
+		DetectorParams DetectorParams
+	}{scenario.Detector, scenario.DetectorParams}
 	riskDefinition := struct {
 		Limits  config.Risk
 		RiskBPS int64
 	}{scenario.Risk, scenario.Execution.RiskBPS}
 	costDefinition := struct {
-		Paper                           PaperSettings
-		ExecutionSlippageTicks          int64
-		RoundTripCommissionPerStepMinor int64
-		PriceValue                      economics.PriceValue
-	}{scenario.Paper, scenario.Execution.SlippageTicks, scenario.Execution.RoundTripCommissionPerStepMinor, scenario.PriceValue}
+		Paper                            PaperSettings
+		ExecutionSlippageTicks           int64
+		RoundTripCommissionPerStepMinor  int64
+		PriceValue                       economics.PriceValue
+		StoplessMaxAdverseExcursionTicks int64
+	}{scenario.Paper, scenario.Execution.SlippageTicks, scenario.Execution.RoundTripCommissionPerStepMinor,
+		scenario.PriceValue, scenario.Execution.StoplessMaxAdverseExcursionTicks}
 	datasetID := scenario.Name + "/events"
 	var dataset any = scenario.Events
 	if scenario.RawDataset != nil {
@@ -305,17 +355,17 @@ func ManifestFor(scenario Scenario) (experiment.Manifest, error) {
 	return experiment.Build(experiment.Input{
 		ExperimentID: scenario.Name,
 		DatasetID:    datasetID, Dataset: dataset,
-		EngineID: "tradex-replay", EngineVersion: "v3",
+		EngineID: "tradex-replay", EngineVersion: "v4-scan",
 		Engine: struct {
 			EventSchema      string
 			FillModel        string
 			AuditModel       string
 			OpportunityModel string
-		}{"v2", "paper-realism-v2", "sha256-chain-v1", "opportunity-funnel-v1"},
+		}{"v3-scan-lifecycle", "paper-realism-v2", "sha256-chain-v1", "opportunity-funnel-v2"},
 		StrategyID: scenario.Execution.StrategyID, StrategyVersion: scenario.Execution.StrategyVersion,
 		Strategy:    strategyDefinition,
 		RiskVersion: "v1", Risk: riskDefinition,
-		CostModelID: "paper", CostVersion: "v2", CostModel: costDefinition,
+		CostModelID: "paper", CostVersion: "v3", CostModel: costDefinition,
 		InstrumentID: scenario.Instrument.Symbol, InstrumentVersion: "v1", Instrument: scenario.Instrument,
 		Scenario: scenario,
 	})
@@ -327,7 +377,12 @@ func run(ctx context.Context, scenario Scenario, manifest experiment.Manifest, a
 	if err != nil {
 		return Result{}, err
 	}
-	machine, err := icc.New(scenario.ICC)
+	detector, err := scenario.Detector.Build()
+	if err != nil {
+		return Result{}, err
+	}
+	spec, _ := instrument.Lookup(scenario.Instrument.Symbol)
+	stream, err := scan.NewStream(scenario.Instrument.Symbol, spec, scenario.DetectorParams.Timeframe, detector, scenario.DetectorParams.btParams())
 	if err != nil {
 		return Result{}, err
 	}
@@ -361,7 +416,6 @@ func run(ctx context.Context, scenario Scenario, manifest experiment.Manifest, a
 	result.Manifest = manifest
 	var lastQuote *domain.Quote
 	intentSequence := 0
-	allTransitions := make([]icc.Transition, 0)
 	opportunityBuilders := make([]*opportunityBuilder, 0)
 	var currentOpportunity *opportunityBuilder
 	releasedReservations := make(map[string]bool)
@@ -379,6 +433,9 @@ func run(ctx context.Context, scenario Scenario, manifest experiment.Manifest, a
 					return err
 				}
 				releasedReservations[fill.IntentID] = true
+				if currentOpportunity != nil && currentOpportunity.opportunity.IntentID == fill.IntentID {
+					currentOpportunity = nil
+				}
 			}
 		}
 		return nil
@@ -399,6 +456,9 @@ func run(ctx context.Context, scenario Scenario, manifest experiment.Manifest, a
 					return err
 				}
 				releasedReservations[order.IntentID] = true
+				if currentOpportunity != nil && currentOpportunity.opportunity.IntentID == order.IntentID {
+					currentOpportunity = nil
+				}
 			}
 		}
 		return nil
@@ -407,63 +467,121 @@ func run(ctx context.Context, scenario Scenario, manifest experiment.Manifest, a
 		return Result{}, err
 	}
 
+	// admit is scan.Stream's admission gate: every DETECTED setup is priced,
+	// sized and risk-approved exactly like the old ICC confirmation handler,
+	// then (on approval) submitted to the real paper.Broker. REAL economics
+	// (fills, P&L, reservation release) always come from the paper broker's
+	// own quote/candle processing below, never from the Stream's own
+	// idealized lifecycle timing -- Stream is the detection/opportunity
+	// narrative, paper.Broker is the execution of record, exactly paralleling
+	// how the ICC machine's transitions were bookkeeping separate from
+	// paperBroker.Fills(). Settlement of the PREVIOUS position's exit and
+	// release of its reservation happens via paperBroker+recordFills before
+	// this callback runs for the SAME candle (see the EventCandle case
+	// below), satisfying "release reservations before admitting the next
+	// setup" within the structural limits of execution.Account, whose
+	// portfolio tracker only releases risk against an explicit Release call
+	// or a real qualifying Fill -- never against an idealized lifecycle event.
+	admit := func(setup scan.Setup) (bool, error) {
+		if lastQuote == nil {
+			return false, errors.New("detector setup has no prior executable quote")
+		}
+		intentSequence++
+		intentID := fmt.Sprintf("%s-intent-%03d", scenario.Name, intentSequence)
+		approved, decision, err := sharedAccount.PrepareSetup(scenario.Execution, execution.SetupRequest{
+			IntentID: intentID, ApprovalID: "risk-" + intentID, Now: setup.DetectedAt,
+			Setup: setup, Symbol: scenario.Instrument.Symbol,
+			Market: domain.MarketSnapshot{
+				Instrument: scenario.Instrument, Bid: lastQuote.Bid, Ask: lastQuote.Ask, ObservedAt: lastQuote.At,
+			},
+			Context: execution.RiskContext{AdapterConnected: true},
+		})
+		if err != nil {
+			return false, err
+		}
+		result.Decisions = append(result.Decisions, decision)
+		if currentOpportunity != nil {
+			currentOpportunity.opportunity.IntentID = intentID
+		}
+		if err := appendAudit(setup.DetectedAt, "RISK_DECISION", intentID, decision); err != nil {
+			return false, err
+		}
+		if !decision.Approved {
+			if currentOpportunity != nil {
+				currentOpportunity.opportunity.Status = OpportunityRiskRejected
+				currentOpportunity.opportunity.DecisionCode = decision.Code
+				currentOpportunity.opportunity.Reason = decision.Reason
+				currentOpportunity.opportunity.ResolvedAt = setup.DetectedAt
+				currentOpportunity.explicit = true
+			}
+			return false, nil
+		}
+		order, err := paperBroker.Submit(ctx, approved)
+		if err != nil {
+			_ = sharedAccount.CancelReservation(intentID)
+			releasedReservations[intentID] = true
+			return false, err
+		}
+		result.Orders = append(result.Orders, order)
+		if err := appendAudit(setup.DetectedAt, "ORDER", intentID, order); err != nil {
+			return false, err
+		}
+		if order.Status == domain.OrderRejected {
+			if currentOpportunity != nil {
+				currentOpportunity.opportunity.Status = OpportunityBrokerRejected
+				currentOpportunity.opportunity.BrokerOrderID = order.BrokerOrderID
+				currentOpportunity.opportunity.Reason = order.RejectReason
+				currentOpportunity.opportunity.ResolvedAt = setup.DetectedAt
+				currentOpportunity.explicit = true
+			}
+			if err := sharedAccount.CancelReservation(intentID); err != nil {
+				return false, err
+			}
+			releasedReservations[intentID] = true
+			return false, nil
+		}
+		return true, nil
+	}
+	// observe is pure bookkeeping/audit for the detection narrative: it never
+	// mutates the account. DETECTED opens one Opportunity (at most one is
+	// active at a time, matching Stream's single pending-setup design);
+	// ENTRY/EXIT/EXPIRED are recorded informationally for the funnel, with
+	// the final Opportunity status still resolved from the REAL orders/fills
+	// in finalizeOpportunities, exactly as the old ICC-era builder did.
+	observe := func(event scan.LifecycleEvent) error {
+		result.Lifecycle = append(result.Lifecycle, event)
+		switch event.Kind {
+		case scan.LifecycleDetected:
+			currentOpportunity = &opportunityBuilder{opportunity: Opportunity{
+				ID:     fmt.Sprintf("%s-opportunity-%03d", scenario.Name, len(opportunityBuilders)+1),
+				Symbol: scenario.Instrument.Symbol, Strategy: event.Strategy, Side: event.Setup.Side,
+				StartedAt: event.At,
+			}}
+			opportunityBuilders = append(opportunityBuilders, currentOpportunity)
+			return appendAudit(event.At, "SETUP_DETECTED", scenario.Name, event)
+		case scan.LifecycleRejected:
+			return appendAudit(event.At, "SETUP_REJECTED", scenario.Name, event)
+		case scan.LifecycleEntry:
+			return appendAudit(event.At, "SETUP_ENTRY", scenario.Name, event)
+		case scan.LifecycleExpired:
+			if currentOpportunity != nil && !currentOpportunity.explicit {
+				currentOpportunity.opportunity.Status = OpportunityExpired
+				currentOpportunity.opportunity.ResolvedAt = event.At
+				currentOpportunity.explicit = true
+			}
+			return appendAudit(event.At, "SETUP_EXPIRED", scenario.Name, event)
+		case scan.LifecycleExit:
+			return appendAudit(event.At, "SETUP_EXIT", scenario.Name, event)
+		default:
+			return fmt.Errorf("unsupported lifecycle event %q", event.Kind)
+		}
+	}
+
 	err = backtest.Replay(scenario.Events, func(event Event) error {
 		if err := manualClock.Set(event.At); err != nil {
 			return err
 		}
 		switch event.Kind {
-		case EventContext:
-			if machine.State() == icc.Completed || machine.State() == icc.Invalidated {
-				allTransitions = append(allTransitions, machine.Transitions()...)
-				machine, err = icc.New(scenario.ICC)
-				if err != nil {
-					return err
-				}
-			}
-			if err := machine.SetContext(event.H4Trend, event.H1Trend); err != nil {
-				return err
-			}
-			return appendAudit(event.At, "ICC_CONTEXT", scenario.Name, event)
-		case EventIndication:
-			currentOpportunity = &opportunityBuilder{opportunity: Opportunity{
-				ID:     fmt.Sprintf("%s-opportunity-%03d", scenario.Name, len(opportunityBuilders)+1),
-				Symbol: scenario.Instrument.Symbol, Direction: event.Direction, StartedAt: event.At,
-			}}
-			opportunityBuilders = append(opportunityBuilders, currentOpportunity)
-			swingKind := features.SwingHigh
-			if event.Direction == features.BreakBearish {
-				swingKind = features.SwingLow
-			}
-			input := icc.Indication{
-				Break: features.StructureBreak{
-					Direction: event.Direction,
-					BrokenSwing: features.Swing{
-						Kind: swingKind, Symbol: event.Candle.Symbol, Timeframe: event.Candle.Timeframe,
-						Price: event.BrokenLevel, PivotTime: event.Candle.OpenTime.Add(-event.Candle.Timeframe),
-						ConfirmedAt: event.Candle.OpenTime,
-					},
-					Candle: *event.Candle, KnownAt: event.At,
-				},
-				InvalidationPrice: event.InvalidationPrice, AllowedSession: event.AllowedSession,
-			}
-			if err := machine.Begin(input); err != nil {
-				return err
-			}
-			return appendAudit(event.At, "ICC_INDICATION", scenario.Name, input)
-		case EventSetupCandle:
-			if err := machine.OnSetupCandle(*event.Candle); err != nil {
-				return err
-			}
-			if currentOpportunity != nil && machine.State() == icc.Invalidated {
-				currentOpportunity.opportunity.Status = OpportunityInvalidated
-				currentOpportunity.opportunity.Reason = machine.Transitions()[len(machine.Transitions())-1].Reason
-				currentOpportunity.opportunity.ResolvedAt = event.At
-				currentOpportunity.explicit = true
-			}
-			return appendAudit(event.At, "ICC_SETUP", scenario.Name, struct {
-				Candle domain.Candle
-				State  icc.State
-			}{*event.Candle, machine.State()})
 		case EventQuote:
 			var fills []domain.Fill
 			var err error
@@ -484,72 +602,9 @@ func run(ctx context.Context, scenario Scenario, manifest experiment.Manifest, a
 				return err
 			}
 			return releaseTerminalOrders()
-		case EventConfirmation:
-			signal, err := machine.OnConfirmation(features.StructureBreak{
-				Direction: event.Direction, Candle: *event.Candle, KnownAt: event.At,
-			}, event.AllowedSession)
-			if err != nil {
-				return err
-			}
-			if lastQuote == nil {
-				return errors.New("ICC confirmation has no prior executable quote")
-			}
-			intentSequence++
-			intentID := fmt.Sprintf("%s-intent-%03d", scenario.Name, intentSequence)
-			beforeFills := len(paperBroker.Fills())
-			approved, decision, err := sharedAccount.PrepareICC(scenario.Execution, execution.ICCRequest{
-				IntentID: intentID, ApprovalID: "risk-" + intentID, Now: event.At,
-				Signal: *signal,
-				Market: domain.MarketSnapshot{
-					Instrument: scenario.Instrument, Bid: lastQuote.Bid, Ask: lastQuote.Ask, ObservedAt: lastQuote.At,
-				},
-				Context: execution.RiskContext{AdapterConnected: true},
-			})
-			if err != nil {
-				return err
-			}
-			result.Decisions = append(result.Decisions, decision)
-			if currentOpportunity == nil {
-				return errors.New("ICC confirmation has no active opportunity")
-			}
-			currentOpportunity.opportunity.IntentID = intentID
-			if !decision.Approved {
-				currentOpportunity.opportunity.Status = OpportunityRiskRejected
-				currentOpportunity.opportunity.DecisionCode = decision.Code
-				currentOpportunity.opportunity.Reason = decision.Reason
-				currentOpportunity.opportunity.ResolvedAt = event.At
-				currentOpportunity.explicit = true
-			}
-			if err := appendAudit(event.At, "RISK_DECISION", intentID, decision); err != nil {
-				return err
-			}
-			if !decision.Approved {
-				return nil
-			}
-			order, err := paperBroker.Submit(ctx, approved)
-			if err != nil {
-				_ = sharedAccount.CancelReservation(intentID)
-				return err
-			}
-			result.Orders = append(result.Orders, order)
-			if err := appendAudit(event.At, "ORDER", intentID, order); err != nil {
-				return err
-			}
-			if order.Status == domain.OrderRejected {
-				currentOpportunity.opportunity.Status = OpportunityBrokerRejected
-				currentOpportunity.opportunity.BrokerOrderID = order.BrokerOrderID
-				currentOpportunity.opportunity.Reason = order.RejectReason
-				currentOpportunity.opportunity.ResolvedAt = event.At
-				currentOpportunity.explicit = true
-				if err := sharedAccount.CancelReservation(intentID); err != nil {
-					return err
-				}
-				releasedReservations[intentID] = true
-				return nil
-			}
-			allFills := paperBroker.Fills()
-			return recordFills(allFills[beforeFills:])
 		case EventCandle:
+			// Settle the PREVIOUS setup's real exit/release before letting
+			// the Stream consider admitting a new one on this same bar.
 			var fills []domain.Fill
 			var err error
 			if event.HalfSpreadTicks == nil {
@@ -566,7 +621,11 @@ func run(ctx context.Context, scenario Scenario, manifest experiment.Manifest, a
 			if err := recordFills(fills); err != nil {
 				return err
 			}
-			return releaseTerminalOrders()
+			if err := releaseTerminalOrders(); err != nil {
+				return err
+			}
+			_, err = stream.AdvanceWithObserver(*event.Candle, admit, observe)
+			return err
 		case EventMarketStatus:
 			if err := paperBroker.SetMarketOpen(scenario.Instrument.Symbol, *event.MarketOpen, event.At); err != nil {
 				return err
@@ -579,7 +638,6 @@ func run(ctx context.Context, scenario Scenario, manifest experiment.Manifest, a
 	if err != nil {
 		return Result{}, err
 	}
-	result.Transitions = append(allTransitions, machine.Transitions()...)
 	result.Orders = paperBroker.Orders()
 	result.Fills = paperBroker.Fills()
 	result.Opportunities = finalizeOpportunities(opportunityBuilders, result.Orders, result.Fills, scenario.Events[len(scenario.Events)-1].At)

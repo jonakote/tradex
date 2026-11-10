@@ -1,6 +1,7 @@
 package replay
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,11 +18,11 @@ import (
 	"tradex/internal/domain"
 	"tradex/internal/execution"
 	"tradex/internal/experiment"
-	"tradex/internal/features"
+	"tradex/internal/instrument"
 	"tradex/internal/journal"
 	"tradex/internal/portfolio"
 	"tradex/internal/risk"
-	"tradex/internal/strategy/icc"
+	"tradex/internal/strategy/scan"
 )
 
 type SharedScenario struct {
@@ -38,16 +39,16 @@ type SharedDecision struct {
 }
 
 type SharedResult struct {
-	Scenario      string                      `json:"scenario"`
-	Manifest      experiment.Manifest         `json:"manifest"`
-	Transitions   map[string][]icc.Transition `json:"transitions"`
-	Decisions     []SharedDecision            `json:"decisions"`
-	Opportunities []Opportunity               `json:"opportunities"`
-	Orders        []domain.BrokerOrder        `json:"orders"`
-	Fills         []domain.Fill               `json:"fills"`
-	Report        analytics.Report            `json:"report"`
-	LegReports    map[string]analytics.Report `json:"leg_reports"`
-	Portfolio     portfolio.View              `json:"portfolio"`
+	Scenario      string                           `json:"scenario"`
+	Manifest      experiment.Manifest              `json:"manifest"`
+	Lifecycle     map[string][]scan.LifecycleEvent `json:"lifecycle"`
+	Decisions     []SharedDecision                 `json:"decisions"`
+	Opportunities []Opportunity                    `json:"opportunities"`
+	Orders        []domain.BrokerOrder             `json:"orders"`
+	Fills         []domain.Fill                    `json:"fills"`
+	Report        analytics.Report                 `json:"report"`
+	LegReports    map[string]analytics.Report      `json:"leg_reports"`
+	Portfolio     portfolio.View                   `json:"portfolio"`
 }
 
 type sharedEvent struct {
@@ -65,8 +66,18 @@ func LoadShared(path string) (SharedScenario, error) {
 }
 
 func DecodeShared(reader io.Reader) (SharedScenario, error) {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return SharedScenario{}, err
+	}
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(data, &probe); err == nil {
+		if _, has := probe["icc"]; has {
+			return SharedScenario{}, errors.New("ICC configuration/field is no longer supported, migrate to a detector config (Scenario.Detector)")
+		}
+	}
 	var scenario SharedScenario
-	decoder := json.NewDecoder(reader)
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&scenario); err != nil {
 		return SharedScenario{}, fmt.Errorf("decode shared replay scenario: %w", err)
@@ -121,30 +132,31 @@ func SharedManifestFor(scenario SharedScenario) (experiment.Manifest, error) {
 		return experiment.Manifest{}, err
 	}
 	type legDefinition struct {
-		Name       string
-		Instrument domain.Instrument
-		ICC        icc.Config
-		Execution  execution.ICCPlan
-		Paper      PaperSettings
-		Events     []Event
-		RawDataset any
+		Name           string
+		Instrument     domain.Instrument
+		Detector       scan.Config
+		DetectorParams DetectorParams
+		Execution      execution.SetupPlan
+		Paper          PaperSettings
+		Events         []Event
+		RawDataset     any
 	}
 	definitions := make([]legDefinition, 0, len(scenario.Legs))
 	instruments := make([]domain.Instrument, 0, len(scenario.Legs))
 	for _, leg := range scenario.Legs {
 		definitions = append(definitions, legDefinition{
-			Name: leg.Name, Instrument: leg.Instrument, ICC: leg.ICC, Execution: leg.Execution,
-			Paper: leg.Paper, Events: leg.Events, RawDataset: leg.RawDataset,
+			Name: leg.Name, Instrument: leg.Instrument, Detector: leg.Detector, DetectorParams: leg.DetectorParams,
+			Execution: leg.Execution, Paper: leg.Paper, Events: leg.Events, RawDataset: leg.RawDataset,
 		})
 		instruments = append(instruments, leg.Instrument)
 	}
 	return experiment.Build(experiment.Input{
 		ExperimentID: scenario.Name, DatasetID: scenario.Name + "/shared-events", Dataset: definitions,
-		EngineID: "tradex-shared-replay", EngineVersion: "v3",
+		EngineID: "tradex-shared-replay", EngineVersion: "v4-scan",
 		Engine:     struct{ Ordering string }{Ordering: "UTC_THEN_SYMBOL_LEXICAL_V1"},
-		StrategyID: "multi-icc", StrategyVersion: "v1", Strategy: definitions,
+		StrategyID: "multi-detector", StrategyVersion: "v1", Strategy: definitions,
 		RiskVersion: "v1", Risk: scenario.Risk,
-		CostModelID: "multi-paper", CostVersion: "v2", CostModel: definitions,
+		CostModelID: "multi-paper", CostVersion: "v3", CostModel: definitions,
 		InstrumentID: "shared", InstrumentVersion: "v1", Instrument: instruments,
 		Scenario: scenario,
 	})
@@ -183,13 +195,13 @@ func runShared(ctx context.Context, scenario SharedScenario, manifest experiment
 		return SharedResult{}, err
 	}
 	brokerInstruments := make(map[string]paper.InstrumentConfig, len(scenario.Legs))
-	machines := make(map[string]*icc.Machine, len(scenario.Legs))
+	streams := make(map[string]*scan.Stream, len(scenario.Legs))
 	legBySymbol := make(map[string]Scenario, len(scenario.Legs))
 	lastQuotes := make(map[string]domain.Quote, len(scenario.Legs))
 	intentSequences := make(map[string]int, len(scenario.Legs))
-	transitionHistory := make(map[string][]icc.Transition, len(scenario.Legs))
 	opportunityBuilders := make([]*opportunityBuilder, 0)
 	currentOpportunities := make(map[string]*opportunityBuilder, len(scenario.Legs))
+	lifecycle := make(map[string][]scan.LifecycleEvent, len(scenario.Legs))
 	for _, leg := range scenario.Legs {
 		brokerInstruments[leg.Instrument.Symbol] = paper.InstrumentConfig{
 			Instrument: leg.Instrument, SlippageTicks: leg.Paper.SlippageTicks,
@@ -199,11 +211,16 @@ func runShared(ctx context.Context, scenario SharedScenario, manifest experiment
 			SubmissionLatency:              leg.Paper.SubmissionLatency,
 			Rollover:                       leg.Paper.Rollover,
 		}
-		machine, err := icc.New(leg.ICC)
+		detector, err := leg.Detector.Build()
 		if err != nil {
 			return SharedResult{}, err
 		}
-		machines[leg.Instrument.Symbol] = machine
+		spec, _ := instrument.Lookup(leg.Instrument.Symbol)
+		stream, err := scan.NewStream(leg.Instrument.Symbol, spec, leg.DetectorParams.Timeframe, detector, leg.DetectorParams.btParams())
+		if err != nil {
+			return SharedResult{}, err
+		}
+		streams[leg.Instrument.Symbol] = stream
 		legBySymbol[leg.Instrument.Symbol] = leg
 	}
 	broker, err := paper.New(paper.Config{
@@ -264,57 +281,15 @@ func runShared(ctx context.Context, scenario SharedScenario, manifest experiment
 	if err := appendAudit(events[0].event.At, "EXPERIMENT_MANIFEST", scenario.Name, manifest); err != nil {
 		return SharedResult{}, err
 	}
-	result = SharedResult{Scenario: scenario.Name, Manifest: manifest, Transitions: make(map[string][]icc.Transition), LegReports: make(map[string]analytics.Report)}
+	result = SharedResult{Scenario: scenario.Name, Manifest: manifest, Lifecycle: lifecycle, LegReports: make(map[string]analytics.Report)}
 
 	for _, tagged := range events {
 		event, symbol := tagged.event, tagged.symbol
 		if err := manualClock.Set(event.At); err != nil {
 			return SharedResult{}, err
 		}
-		leg, machine := legBySymbol[symbol], machines[symbol]
+		leg := legBySymbol[symbol]
 		switch event.Kind {
-		case EventContext:
-			if machine.State() == icc.Completed || machine.State() == icc.Invalidated {
-				transitionHistory[symbol] = append(transitionHistory[symbol], machine.Transitions()...)
-				machine, err = icc.New(leg.ICC)
-				if err != nil {
-					return SharedResult{}, err
-				}
-				machines[symbol] = machine
-			}
-			if err := machine.SetContext(event.H4Trend, event.H1Trend); err != nil {
-				return SharedResult{}, err
-			}
-			if err := appendAudit(event.At, "ICC_CONTEXT", symbol, event); err != nil {
-				return SharedResult{}, err
-			}
-		case EventIndication:
-			opportunity := &opportunityBuilder{opportunity: Opportunity{
-				ID:     fmt.Sprintf("%s-%s-opportunity-%03d", scenario.Name, symbol, len(opportunityBuilders)+1),
-				Symbol: symbol, Direction: event.Direction, StartedAt: event.At,
-			}}
-			opportunityBuilders = append(opportunityBuilders, opportunity)
-			currentOpportunities[symbol] = opportunity
-			input := indicationFromEvent(event)
-			if err := machine.Begin(input); err != nil {
-				return SharedResult{}, err
-			}
-			if err := appendAudit(event.At, "ICC_INDICATION", symbol, input); err != nil {
-				return SharedResult{}, err
-			}
-		case EventSetupCandle:
-			if err := machine.OnSetupCandle(*event.Candle); err != nil {
-				return SharedResult{}, err
-			}
-			if opportunity := currentOpportunities[symbol]; opportunity != nil && machine.State() == icc.Invalidated {
-				opportunity.opportunity.Status = OpportunityInvalidated
-				opportunity.opportunity.Reason = machine.Transitions()[len(machine.Transitions())-1].Reason
-				opportunity.opportunity.ResolvedAt = event.At
-				opportunity.explicit = true
-			}
-			if err := appendAudit(event.At, "ICC_SETUP", symbol, struct{ State icc.State }{machine.State()}); err != nil {
-				return SharedResult{}, err
-			}
 		case EventQuote:
 			var fills []domain.Fill
 			var err error
@@ -334,70 +309,6 @@ func runShared(ctx context.Context, scenario SharedScenario, manifest experiment
 				return SharedResult{}, err
 			}
 			if err := releaseTerminalOrders(); err != nil {
-				return SharedResult{}, err
-			}
-		case EventConfirmation:
-			signal, err := machine.OnConfirmation(features.StructureBreak{Direction: event.Direction, Candle: *event.Candle, KnownAt: event.At}, event.AllowedSession)
-			if err != nil {
-				return SharedResult{}, err
-			}
-			quote, exists := lastQuotes[symbol]
-			if !exists {
-				return SharedResult{}, fmt.Errorf("shared confirmation for %s has no quote", symbol)
-			}
-			intentSequences[symbol]++
-			intentID := fmt.Sprintf("%s-%s-intent-%03d", scenario.Name, symbol, intentSequences[symbol])
-			beforeFills := len(broker.Fills())
-			approved, decision, err := account.PrepareICC(leg.Execution, execution.ICCRequest{
-				IntentID: intentID, ApprovalID: "risk-" + intentID, Now: event.At, Signal: *signal,
-				Market:  domain.MarketSnapshot{Instrument: leg.Instrument, Bid: quote.Bid, Ask: quote.Ask, ObservedAt: quote.At},
-				Context: execution.RiskContext{AdapterConnected: true},
-			})
-			if err != nil {
-				return SharedResult{}, err
-			}
-			result.Decisions = append(result.Decisions, SharedDecision{Symbol: symbol, IntentID: intentID, Decision: decision})
-			opportunity := currentOpportunities[symbol]
-			if opportunity == nil {
-				return SharedResult{}, fmt.Errorf("shared confirmation for %s has no active opportunity", symbol)
-			}
-			opportunity.opportunity.IntentID = intentID
-			if !decision.Approved {
-				opportunity.opportunity.Status = OpportunityRiskRejected
-				opportunity.opportunity.DecisionCode = decision.Code
-				opportunity.opportunity.Reason = decision.Reason
-				opportunity.opportunity.ResolvedAt = event.At
-				opportunity.explicit = true
-			}
-			if err := appendAudit(event.At, "RISK_DECISION", intentID, decision); err != nil {
-				return SharedResult{}, err
-			}
-			if !decision.Approved {
-				continue
-			}
-			order, err := broker.Submit(ctx, approved)
-			if err != nil {
-				_ = account.CancelReservation(intentID)
-				return SharedResult{}, err
-			}
-			result.Orders = append(result.Orders, order)
-			if err := appendAudit(event.At, "ORDER", intentID, order); err != nil {
-				return SharedResult{}, err
-			}
-			if order.Status == domain.OrderRejected {
-				opportunity.opportunity.Status = OpportunityBrokerRejected
-				opportunity.opportunity.BrokerOrderID = order.BrokerOrderID
-				opportunity.opportunity.Reason = order.RejectReason
-				opportunity.opportunity.ResolvedAt = event.At
-				opportunity.explicit = true
-				if err := account.CancelReservation(intentID); err != nil {
-					return SharedResult{}, err
-				}
-				releasedReservations[intentID] = true
-				continue
-			}
-			fills := broker.Fills()
-			if err := recordFills(fills[beforeFills:]); err != nil {
 				return SharedResult{}, err
 			}
 		case EventCandle:
@@ -420,6 +331,96 @@ func runShared(ctx context.Context, scenario SharedScenario, manifest experiment
 			if err := releaseTerminalOrders(); err != nil {
 				return SharedResult{}, err
 			}
+			admit := func(setup scan.Setup) (bool, error) {
+				quote, exists := lastQuotes[symbol]
+				if !exists {
+					return false, fmt.Errorf("shared detection for %s has no quote", symbol)
+				}
+				intentSequences[symbol]++
+				intentID := fmt.Sprintf("%s-%s-intent-%03d", scenario.Name, symbol, intentSequences[symbol])
+				approved, decision, err := account.PrepareSetup(leg.Execution, execution.SetupRequest{
+					IntentID: intentID, ApprovalID: "risk-" + intentID, Now: setup.DetectedAt,
+					Setup: setup, Symbol: symbol,
+					Market:  domain.MarketSnapshot{Instrument: leg.Instrument, Bid: quote.Bid, Ask: quote.Ask, ObservedAt: quote.At},
+					Context: execution.RiskContext{AdapterConnected: true},
+				})
+				if err != nil {
+					return false, err
+				}
+				result.Decisions = append(result.Decisions, SharedDecision{Symbol: symbol, IntentID: intentID, Decision: decision})
+				if opp := currentOpportunities[symbol]; opp != nil {
+					opp.opportunity.IntentID = intentID
+				}
+				if err := appendAudit(setup.DetectedAt, "RISK_DECISION", intentID, decision); err != nil {
+					return false, err
+				}
+				if !decision.Approved {
+					if opp := currentOpportunities[symbol]; opp != nil {
+						opp.opportunity.Status = OpportunityRiskRejected
+						opp.opportunity.DecisionCode = decision.Code
+						opp.opportunity.Reason = decision.Reason
+						opp.opportunity.ResolvedAt = setup.DetectedAt
+						opp.explicit = true
+					}
+					return false, nil
+				}
+				order, err := broker.Submit(ctx, approved)
+				if err != nil {
+					_ = account.CancelReservation(intentID)
+					releasedReservations[intentID] = true
+					return false, err
+				}
+				result.Orders = append(result.Orders, order)
+				if err := appendAudit(setup.DetectedAt, "ORDER", intentID, order); err != nil {
+					return false, err
+				}
+				if order.Status == domain.OrderRejected {
+					if opp := currentOpportunities[symbol]; opp != nil {
+						opp.opportunity.Status = OpportunityBrokerRejected
+						opp.opportunity.BrokerOrderID = order.BrokerOrderID
+						opp.opportunity.Reason = order.RejectReason
+						opp.opportunity.ResolvedAt = setup.DetectedAt
+						opp.explicit = true
+					}
+					if err := account.CancelReservation(intentID); err != nil {
+						return false, err
+					}
+					releasedReservations[intentID] = true
+					return false, nil
+				}
+				return true, nil
+			}
+			observe := func(evt scan.LifecycleEvent) error {
+				lifecycle[symbol] = append(lifecycle[symbol], evt)
+				switch evt.Kind {
+				case scan.LifecycleDetected:
+					opp := &opportunityBuilder{opportunity: Opportunity{
+						ID:     fmt.Sprintf("%s-%s-opportunity-%03d", scenario.Name, symbol, len(opportunityBuilders)+1),
+						Symbol: symbol, Strategy: evt.Strategy, Side: evt.Setup.Side, StartedAt: evt.At,
+					}}
+					opportunityBuilders = append(opportunityBuilders, opp)
+					currentOpportunities[symbol] = opp
+					return appendAudit(evt.At, "SETUP_DETECTED", symbol, evt)
+				case scan.LifecycleRejected:
+					return appendAudit(evt.At, "SETUP_REJECTED", symbol, evt)
+				case scan.LifecycleEntry:
+					return appendAudit(evt.At, "SETUP_ENTRY", symbol, evt)
+				case scan.LifecycleExpired:
+					if opp := currentOpportunities[symbol]; opp != nil && !opp.explicit {
+						opp.opportunity.Status = OpportunityExpired
+						opp.opportunity.ResolvedAt = evt.At
+						opp.explicit = true
+					}
+					return appendAudit(evt.At, "SETUP_EXPIRED", symbol, evt)
+				case scan.LifecycleExit:
+					return appendAudit(evt.At, "SETUP_EXIT", symbol, evt)
+				default:
+					return fmt.Errorf("unsupported lifecycle event %q", evt.Kind)
+				}
+			}
+			if _, err := streams[symbol].AdvanceWithObserver(*event.Candle, admit, observe); err != nil {
+				return SharedResult{}, err
+			}
 		case EventMarketStatus:
 			if err := broker.SetMarketOpen(symbol, *event.MarketOpen, event.At); err != nil {
 				return SharedResult{}, err
@@ -427,10 +428,9 @@ func runShared(ctx context.Context, scenario SharedScenario, manifest experiment
 			if err := appendAudit(event.At, "MARKET_STATUS", symbol, event); err != nil {
 				return SharedResult{}, err
 			}
+		default:
+			return SharedResult{}, fmt.Errorf("unsupported shared replay event %q", event.Kind)
 		}
-	}
-	for symbol, machine := range machines {
-		result.Transitions[symbol] = append(transitionHistory[symbol], machine.Transitions()...)
 	}
 	result.Fills = broker.Fills()
 	result.Orders = broker.Orders()
@@ -484,22 +484,4 @@ func mergeSharedEvents(legs []Scenario) ([]sharedEvent, error) {
 		return nil, errors.New("shared scenario has no events")
 	}
 	return events, nil
-}
-
-func indicationFromEvent(event Event) icc.Indication {
-	swingKind := features.SwingHigh
-	if event.Direction == features.BreakBearish {
-		swingKind = features.SwingLow
-	}
-	return icc.Indication{
-		Break: features.StructureBreak{
-			Direction: event.Direction,
-			BrokenSwing: features.Swing{
-				Kind: swingKind, Symbol: event.Candle.Symbol, Timeframe: event.Candle.Timeframe,
-				Price: event.BrokenLevel, PivotTime: event.Candle.OpenTime.Add(-event.Candle.Timeframe), ConfirmedAt: event.Candle.OpenTime,
-			},
-			Candle: *event.Candle, KnownAt: event.At,
-		},
-		InvalidationPrice: event.InvalidationPrice, AllowedSession: event.AllowedSession,
-	}
 }

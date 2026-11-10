@@ -274,7 +274,7 @@ func opportunitySummary(opportunities []replay.Opportunity) OpportunitySummary {
 		switch opportunity.Status {
 		case replay.OpportunityUnconfirmed:
 			result.Unconfirmed++
-		case replay.OpportunityInvalidated:
+		case replay.OpportunityExpired:
 			result.Invalidated++
 		case replay.OpportunityRiskRejected:
 			result.RiskRejected++

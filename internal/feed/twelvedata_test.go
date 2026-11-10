@@ -9,43 +9,61 @@ import (
 	"time"
 )
 
-func TestCandleValidation(t *testing.T) {
-	valid := Candle{
-		Symbol: "EUR/USD", Interval: "1h",
-		Open: 1.08400, High: 1.08500, Low: 1.08300, Close: 1.08450,
-		Volume: 1000, Time: time.Now(),
+func TestParseCandlesConvertsToIntegerTicks(t *testing.T) {
+	client, err := NewTwelveDataClient(TwelveDataConfig{
+		APIKey: "test-key", Symbols: []string{"EUR/USD"}, Interval: "1h",
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := valid.Validate(); err != nil {
-		t.Fatalf("valid candle rejected: %v", err)
+	data := twelveDataResponse{
+		Values: []twelveDataValue{
+			{Datetime: "2026-08-20 14:00:00", Open: "1.08400", High: "1.08500",
+				Low: "1.08300", Close: "1.08450", Volume: "1000"},
+		},
+		Status: "ok",
 	}
 
-	t.Run("missing symbol", func(t *testing.T) {
-		c := valid
-		c.Symbol = ""
-		if err := c.Validate(); err == nil {
-			t.Fatal("accepted")
+	candles, err := client.parseCandles("EUR/USD", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candles) != 1 {
+		t.Fatalf("expected 1 candle, got %d", len(candles))
+	}
+	got := candles[0]
+	// EUR/USD is verified at 5 digits: 1.08400 is 108400 integer ticks.
+	if got.Open != 108400 || got.High != 108500 || got.Low != 108300 || got.Close != 108450 {
+		t.Fatalf("unexpected ticks: %+v", got)
+	}
+	if got.Source != "twelvedata" {
+		t.Fatalf("unexpected source: %q", got.Source)
+	}
+	if got.Timeframe != time.Hour {
+		t.Fatalf("unexpected timeframe: %s", got.Timeframe)
+	}
+	if !got.CloseTime.Equal(got.OpenTime.Add(time.Hour)) {
+		t.Fatalf("close must equal open plus timeframe: %+v", got)
+	}
+	if err := got.Validate(); err != nil {
+		t.Fatalf("produced candle fails domain validation: %v", err)
+	}
+
+	t.Run("unverified instrument fails closed", func(t *testing.T) {
+		if _, err := client.parseCandles("NOT_A_REAL_SYMBOL", data); err == nil {
+			t.Fatal("an unverified instrument must be rejected, not assumed")
 		}
 	})
-	t.Run("negative price", func(t *testing.T) {
-		c := valid
-		c.Open = -1
-		if err := c.Validate(); err == nil {
-			t.Fatal("accepted")
+	t.Run("unknown interval fails closed", func(t *testing.T) {
+		bad, err := NewTwelveDataClient(TwelveDataConfig{
+			APIKey: "test-key", Symbols: []string{"EUR/USD"}, Interval: "1h",
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-	})
-	t.Run("high below low", func(t *testing.T) {
-		c := valid
-		c.High = 1.08200
-		c.Low = 1.08300
-		if err := c.Validate(); err == nil {
-			t.Fatal("accepted")
-		}
-	})
-	t.Run("zero time", func(t *testing.T) {
-		c := valid
-		c.Time = time.Time{}
-		if err := c.Validate(); err == nil {
-			t.Fatal("accepted")
+		bad.config.Interval = "nonsense"
+		if _, err := bad.parseCandles("EUR/USD", data); err == nil {
+			t.Fatal("an unknown interval must be rejected, not silently dropped")
 		}
 	})
 }
@@ -129,14 +147,15 @@ func TestFetchCandlesFromFakeServer(t *testing.T) {
 		t.Fatalf("expected 3 candles, got %d", len(candles))
 	}
 	// Should be in chronological order (oldest first)
-	if candles[0].Time.After(candles[1].Time) {
+	if candles[0].OpenTime.After(candles[1].OpenTime) {
 		t.Fatal("candles not in chronological order")
 	}
-	if candles[0].Close != 1.08400 {
-		t.Fatalf("first candle close: %f", candles[0].Close)
+	// EUR/USD is verified at 5 digits.
+	if candles[0].Close != 108400 {
+		t.Fatalf("first candle close: %d", candles[0].Close)
 	}
-	if candles[2].Close != 1.08550 {
-		t.Fatalf("last candle close: %f", candles[2].Close)
+	if candles[2].Close != 108550 {
+		t.Fatalf("last candle close: %d", candles[2].Close)
 	}
 }
 

@@ -1,0 +1,28 @@
+{
+  "capital": {
+    "symbols": ["EURUSD", "GBPUSD", "AUDUSD", "USDJPY", "USDCAD", "XAUUSD"],
+    "interval": "1h",
+    "side": "bid",
+    "bars": 200
+  },
+  "poll_interval": "5m",
+  "journal": "data/signals.jsonl",
+  "desktop": true,
+  "telegram": true,
+  "group_cooldown": "4h",
+  "symbol_cooldown": "2h",
+  "blackouts": [
+    {
+      "name": "US non-farm payrolls",
+      "at": "2026-11-06T13:30:00Z",
+      "before": "30m",
+      "after": "60m"
+    },
+    {
+      "name": "US non-farm payrolls",
+      "at": "2026-12-04T13:30:00Z",
+      "before": "30m",
+      "after": "60m"
+    }
+  ]
+}

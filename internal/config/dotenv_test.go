@@ -98,10 +98,10 @@ VALID_KEY=valid_value
 
 func TestParseDotEnvLine(t *testing.T) {
 	tests := []struct {
-		line     string
-		key      string
-		value    string
-		ok       bool
+		line  string
+		key   string
+		value string
+		ok    bool
 	}{
 		{"KEY=value", "KEY", "value", true},
 		{"KEY=\"value\"", "KEY", "value", true},

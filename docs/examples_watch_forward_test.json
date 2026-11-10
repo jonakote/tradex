@@ -1,0 +1,16 @@
+{
+  "capital": {
+    "symbols": ["EURUSD", "GBPUSD", "AUDUSD", "XAUUSD"],
+    "interval": "1d"
+  },
+  "strategies": ["ibs", "continuation", "ict", "amn", "structuretrend", "trianglebreakout"],
+  "ibs_hold": 1,
+  "ibs_long_below_bps": 2000,
+  "ibs_short_above_bps": 8000,
+  "poll_interval": "1h",
+  "journal": "data/forward_signals.jsonl",
+  "desktop": false,
+  "telegram": true,
+  "symbol_cooldown": "20h",
+  "group_cooldown": "20h"
+}

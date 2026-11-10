@@ -11,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"tradex/internal/domain"
+	"tradex/internal/instrument"
 )
 
 // FinnhubConfig configures the Finnhub REST client.
@@ -130,8 +133,8 @@ type finnhubCandleResponse struct {
 }
 
 // FetchCandles fetches recent candles for a single symbol.
-// It returns only new candles since the last fetch (deduplication by time).
-func (c *FinnhubClient) FetchCandles(ctx context.Context, symbol string) ([]Candle, error) {
+// It returns only new candles since the last fetch (deduplication by open time).
+func (c *FinnhubClient) FetchCandles(ctx context.Context, symbol string) ([]domain.Candle, error) {
 	return c.fetchCandles(ctx, symbol, c.config.Interval)
 }
 
@@ -139,11 +142,11 @@ func (c *FinnhubClient) FetchCandles(ctx context.Context, symbol string) ([]Cand
 // market-data manager can request several timeframes through one provider;
 // using the client's configured interval here would silently return the wrong
 // timeframe for every request that differs from the default.
-func (c *FinnhubClient) FetchCandlesAt(ctx context.Context, symbol, interval string) ([]Candle, error) {
+func (c *FinnhubClient) FetchCandlesAt(ctx context.Context, symbol, interval string) ([]domain.Candle, error) {
 	return c.fetchCandles(ctx, symbol, interval)
 }
 
-func (c *FinnhubClient) fetchCandles(ctx context.Context, symbol, interval string) ([]Candle, error) {
+func (c *FinnhubClient) fetchCandles(ctx context.Context, symbol, interval string) ([]domain.Candle, error) {
 	resolution := finnhubResolution(interval)
 	if resolution == "" {
 		return nil, fmt.Errorf("finnhub unsupported interval %q", interval)
@@ -206,19 +209,22 @@ func (c *FinnhubClient) fetchCandles(ctx context.Context, symbol, interval strin
 		return nil, fmt.Errorf("finnhub %s: no data available", symbol)
 	}
 
-	candles := c.parseCandles(symbol, interval, data)
+	candles, err := c.parseCandles(symbol, interval, data)
+	if err != nil {
+		return nil, err
+	}
 
 	// Filter out already-seen candles
 	c.mu.Lock()
 	lastKey := symbol + "\x00" + interval
 	lastTime := c.last[lastKey]
-	var newCandles []Candle
+	var newCandles []domain.Candle
 	var latestTime time.Time
 	for _, candle := range candles {
-		if candle.Time.After(lastTime) {
+		if candle.OpenTime.After(lastTime) {
 			newCandles = append(newCandles, candle)
-			if candle.Time.After(latestTime) {
-				latestTime = candle.Time
+			if candle.OpenTime.After(latestTime) {
+				latestTime = candle.OpenTime
 			}
 		}
 	}
@@ -232,8 +238,8 @@ func (c *FinnhubClient) fetchCandles(ctx context.Context, symbol, interval strin
 
 // FetchAllSymbols fetches candles for all configured symbols.
 // Free tier allows 60 calls/min; requests are spaced conservatively.
-func (c *FinnhubClient) FetchAllSymbols(ctx context.Context) ([]Candle, error) {
-	var all []Candle
+func (c *FinnhubClient) FetchAllSymbols(ctx context.Context) ([]domain.Candle, error) {
+	var all []domain.Candle
 	for i, symbol := range c.config.Symbols {
 		if i > 0 {
 			select {
@@ -313,31 +319,42 @@ type Quote struct {
 	Interval string
 }
 
-func (c *FinnhubClient) parseCandles(symbol, interval string, data finnhubCandleResponse) []Candle {
-	candles := make([]Candle, 0, len(data.T))
+// parseCandles converts the vendor payload into validated domain candles.
+//
+// Prices convert to integer ticks once, here, at the verified instrument
+// precision; an unresolved symbol or unknown interval fails closed (returns
+// an error) rather than guessing a scale, matching resolve() in source.go.
+func (c *FinnhubClient) parseCandles(symbol, interval string, data finnhubCandleResponse) ([]domain.Candle, error) {
+	spec, ok := instrument.Lookup(symbol)
+	if !ok {
+		return nil, &UnknownInstrumentError{Symbol: symbol}
+	}
+	timeframe := IntervalDuration(interval)
+	if timeframe <= 0 {
+		return nil, fmt.Errorf("feed: finnhub unknown interval %q", interval)
+	}
+
+	candles := make([]domain.Candle, 0, len(data.T))
 	for i := range data.T {
 		if i >= len(data.O) || i >= len(data.H) || i >= len(data.L) || i >= len(data.C) {
 			continue
 		}
 		// Finnhub's `t` is the bar's open.
 		barOpen, barClose := resolveBarTimes(time.Unix(data.T[i], 0), interval)
-		candle := Candle{
-			Symbol:    symbol,
-			Interval:  interval,
-			Open:      data.O[i],
-			High:      data.H[i],
-			Low:       data.L[i],
-			Close:     data.C[i],
-			Volume:    volAt(data.V, i),
-			Time:      barOpen,
-			OpenTime:  barOpen,
-			CloseTime: barClose,
+		candle := domain.Candle{
+			Source: "finnhub", Symbol: symbol, Timeframe: timeframe,
+			OpenTime: barOpen, CloseTime: barClose,
+			Open:      domain.Price(spec.Ticks(data.O[i])),
+			High:      domain.Price(spec.Ticks(data.H[i])),
+			Low:       domain.Price(spec.Ticks(data.L[i])),
+			Close:     domain.Price(spec.Ticks(data.C[i])),
+			TickCount: maxUint64(uint64(volAt(data.V, i)), 1),
 		}
 		if err := candle.Validate(); err == nil {
 			candles = append(candles, candle)
 		}
 	}
-	return candles
+	return candles, nil
 }
 
 func volAt(v []float64, i int) float64 {

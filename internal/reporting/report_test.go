@@ -14,7 +14,7 @@ import (
 )
 
 func TestSingleReportIsDeterministicHashedAndExportedNewOnly(t *testing.T) {
-	scenario, err := replay.Load(filepath.Join("..", "research", "replay", "testdata", "eurusd_icc_win.json"))
+	scenario, err := replay.Load(filepath.Join("..", "research", "replay", "testdata", "eurusd_continuation_win.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestSingleReportIsDeterministicHashedAndExportedNewOnly(t *testing.T) {
 	if !reflect.DeepEqual(report, second) {
 		t.Fatal("same replay result produced different research reports")
 	}
-	if report.Account.Trades != 1 || report.Account.NetProfitMinor != 4620 || report.Account.ReturnBPS != 46 ||
+	if report.Account.Trades != 1 || report.Account.NetProfitMinor != 9102 || report.Account.ReturnBPS != 91 ||
 		report.Decisions.Total != 1 || report.Decisions.Approved != 1 || report.Execution.ClosingFills != 1 ||
 		report.Opportunities.Total != 1 || report.Opportunities.Closed != 1 {
 		t.Fatalf("unexpected report: %+v", report)
@@ -84,7 +84,7 @@ func TestSingleReportIsDeterministicHashedAndExportedNewOnly(t *testing.T) {
 }
 
 func TestSharedReportIncludesPerSymbolDecisionBreakdown(t *testing.T) {
-	base, err := replay.Load(filepath.Join("..", "research", "replay", "testdata", "eurusd_icc_win.json"))
+	base, err := replay.Load(filepath.Join("..", "research", "replay", "testdata", "eurusd_continuation_win.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

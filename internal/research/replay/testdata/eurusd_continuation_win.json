@@ -1,0 +1,149 @@
+{
+  "name": "eurusd-continuation-win",
+  "initial_equity_minor": 1000000,
+  "instrument": {
+    "Symbol": "EURUSD",
+    "BaseCurrency": "EUR",
+    "QuoteCurrency": "USD",
+    "PriceScale": 100000,
+    "TickSize": 1,
+    "QuantityStep": 1000,
+    "MinQuantity": 1000,
+    "MaxQuantity": 1000000
+  },
+  "price_value": {
+    "AccountCurrency": "USD",
+    "Numerator": 1,
+    "Denominator": 1
+  },
+  "paper": {
+    "account_id": "paper-eurusd",
+    "max_quote_age": 5000000000,
+    "slippage_ticks": 1,
+    "half_spread_ticks_for_candle": 1,
+    "commission_per_quantity_step_minor": 2
+  },
+  "risk": {},
+  "detector": {
+    "name": "continuation",
+    "continuation": {
+      "impulse_bars": 3,
+      "prior_bars": 3,
+      "min_directional_bps": 1,
+      "min_displacement_bps": 1,
+      "min_break_ticks": 1,
+      "retest_offset_bps": 0,
+      "stop_buffer_ticks": 1,
+      "min_stop_spread_multiple": 0,
+      "target_bars": 3,
+      "min_reward_risk_bps": 10000,
+      "max_entry_distance_bps": 100000,
+      "entry_mode": "retest"
+    }
+  },
+  "detector_params": {
+    "timeframe": 3600000000000,
+    "expiry_bars": 8,
+    "max_hold_bars": 48,
+    "spread_ticks": 0
+  },
+  "execution": {
+    "StrategyID": "continuation",
+    "StrategyVersion": "v1",
+    "IntentTTL": 14400000000000,
+    "RiskBPS": 25,
+    "SlippageTicks": 1,
+    "RoundTripCommissionPerStepMinor": 4,
+    "StoplessMaxAdverseExcursionTicks": 50
+  },
+  "events": [
+    {
+      "at": "2026-09-01T00:00:00Z",
+      "kind": "EXECUTION_CANDLE",
+      "candle": {
+        "Source": "fixture", "Symbol": "EURUSD", "Timeframe": 3600000000000,
+        "OpenTime": "2026-08-31T23:00:00Z", "CloseTime": "2026-09-01T00:00:00Z",
+        "Open": 108000, "High": 108050, "Low": 107960, "Close": 108010, "TickCount": 10
+      }
+    },
+    {
+      "at": "2026-09-01T01:00:00Z",
+      "kind": "EXECUTION_CANDLE",
+      "candle": {
+        "Source": "fixture", "Symbol": "EURUSD", "Timeframe": 3600000000000,
+        "OpenTime": "2026-09-01T00:00:00Z", "CloseTime": "2026-09-01T01:00:00Z",
+        "Open": 108010, "High": 108040, "Low": 107970, "Close": 108000, "TickCount": 10
+      }
+    },
+    {
+      "at": "2026-09-01T02:00:00Z",
+      "kind": "EXECUTION_CANDLE",
+      "candle": {
+        "Source": "fixture", "Symbol": "EURUSD", "Timeframe": 3600000000000,
+        "OpenTime": "2026-09-01T01:00:00Z", "CloseTime": "2026-09-01T02:00:00Z",
+        "Open": 108000, "High": 108050, "Low": 107950, "Close": 108005, "TickCount": 10
+      }
+    },
+    {
+      "at": "2026-09-01T03:00:00Z",
+      "kind": "EXECUTION_CANDLE",
+      "candle": {
+        "Source": "fixture", "Symbol": "EURUSD", "Timeframe": 3600000000000,
+        "OpenTime": "2026-09-01T02:00:00Z", "CloseTime": "2026-09-01T03:00:00Z",
+        "Open": 108005, "High": 108100, "Low": 107990, "Close": 108090, "TickCount": 10
+      }
+    },
+    {
+      "at": "2026-09-01T04:00:00Z",
+      "kind": "EXECUTION_CANDLE",
+      "candle": {
+        "Source": "fixture", "Symbol": "EURUSD", "Timeframe": 3600000000000,
+        "OpenTime": "2026-09-01T03:00:00Z", "CloseTime": "2026-09-01T04:00:00Z",
+        "Open": 108090, "High": 108200, "Low": 108080, "Close": 108190, "TickCount": 10
+      }
+    },
+    {
+      "at": "2026-09-01T04:59:58Z",
+      "kind": "QUOTE",
+      "quote": {
+        "Source": "fixture", "Symbol": "EURUSD", "Bid": 108288, "Ask": 108290,
+        "At": "2026-09-01T04:59:58Z", "Sequence": 1
+      }
+    },
+    {
+      "at": "2026-09-01T05:00:00Z",
+      "kind": "EXECUTION_CANDLE",
+      "candle": {
+        "Source": "fixture", "Symbol": "EURUSD", "Timeframe": 3600000000000,
+        "OpenTime": "2026-09-01T04:00:00Z", "CloseTime": "2026-09-01T05:00:00Z",
+        "Open": 108190, "High": 108300, "Low": 108180, "Close": 108290, "TickCount": 10
+      }
+    },
+    {
+      "at": "2026-09-01T05:30:00Z",
+      "kind": "QUOTE",
+      "quote": {
+        "Source": "fixture", "Symbol": "EURUSD", "Bid": 108043, "Ask": 108047,
+        "At": "2026-09-01T05:30:00Z", "Sequence": 2
+      }
+    },
+    {
+      "at": "2026-09-01T06:00:00Z",
+      "kind": "EXECUTION_CANDLE",
+      "candle": {
+        "Source": "fixture", "Symbol": "EURUSD", "Timeframe": 3600000000000,
+        "OpenTime": "2026-09-01T05:00:00Z", "CloseTime": "2026-09-01T06:00:00Z",
+        "Open": 108290, "High": 108295, "Low": 108040, "Close": 108060, "TickCount": 10
+      }
+    },
+    {
+      "at": "2026-09-01T07:00:00Z",
+      "kind": "EXECUTION_CANDLE",
+      "candle": {
+        "Source": "fixture", "Symbol": "EURUSD", "Timeframe": 3600000000000,
+        "OpenTime": "2026-09-01T06:00:00Z", "CloseTime": "2026-09-01T07:00:00Z",
+        "Open": 108060, "High": 108310, "Low": 108050, "Close": 108300, "TickCount": 10
+      }
+    }
+  ]
+}

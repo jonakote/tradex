@@ -11,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"tradex/internal/domain"
+	"tradex/internal/instrument"
 )
 
 // FCSConfig configures the FCS API REST client.
@@ -126,7 +129,7 @@ func unmarshalFCSCandles(raw json.RawMessage) ([]fcsCandle, error) {
 
 // FetchCandles fetches recent candles for a single symbol.
 // Tries /forex/history first, and falls back to /forex/latest if historical candles are unavailable.
-func (c *FCSClient) FetchCandles(ctx context.Context, symbol string) ([]Candle, error) {
+func (c *FCSClient) FetchCandles(ctx context.Context, symbol string) ([]domain.Candle, error) {
 	candles, err := c.fetchHistory(ctx, symbol)
 	if err == nil && len(candles) > 0 {
 		return c.deduplicate(symbol, candles), nil
@@ -144,7 +147,7 @@ func (c *FCSClient) FetchCandles(ctx context.Context, symbol string) ([]Candle, 
 	return nil, errLatest
 }
 
-func (c *FCSClient) fetchHistory(ctx context.Context, symbol string) ([]Candle, error) {
+func (c *FCSClient) fetchHistory(ctx context.Context, symbol string) ([]domain.Candle, error) {
 	// FCS uses symbols without slash for forex history: XAG/USD -> XAGUSD
 	fcsSymbol := strings.ReplaceAll(symbol, "/", "")
 
@@ -154,7 +157,7 @@ func (c *FCSClient) fetchHistory(ctx context.Context, symbol string) ([]Candle, 
 	return c.doRequest(ctx, url, symbol)
 }
 
-func (c *FCSClient) fetchLatest(ctx context.Context, symbol string) ([]Candle, error) {
+func (c *FCSClient) fetchLatest(ctx context.Context, symbol string) ([]domain.Candle, error) {
 	// FCS /forex/latest accepts both symbol formats (e.g. XAG/USD or XAGUSD)
 	url := fmt.Sprintf("%s/forex/latest?symbol=%s&access_key=%s",
 		c.config.baseURL(), symbol, c.config.APIKey)
@@ -162,7 +165,7 @@ func (c *FCSClient) fetchLatest(ctx context.Context, symbol string) ([]Candle, e
 	return c.doRequest(ctx, url, symbol)
 }
 
-func (c *FCSClient) doRequest(ctx context.Context, url, symbol string) ([]Candle, error) {
+func (c *FCSClient) doRequest(ctx context.Context, url, symbol string) ([]domain.Candle, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("FCS request: %w", err)
@@ -201,21 +204,21 @@ func (c *FCSClient) doRequest(ctx context.Context, url, symbol string) ([]Candle
 		return nil, fmt.Errorf("FCS decode %s: %w", symbol, err)
 	}
 
-	return c.parseCandles(symbol, rawCandles), nil
+	return c.parseCandles(symbol, rawCandles)
 }
 
-func (c *FCSClient) deduplicate(symbol string, candles []Candle) []Candle {
+func (c *FCSClient) deduplicate(symbol string, candles []domain.Candle) []domain.Candle {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	lastTime := c.last[symbol]
-	var newCandles []Candle
+	var newCandles []domain.Candle
 	var latestTime time.Time
 	for _, candle := range candles {
-		if candle.Time.After(lastTime) {
+		if candle.OpenTime.After(lastTime) {
 			newCandles = append(newCandles, candle)
-			if candle.Time.After(latestTime) {
-				latestTime = candle.Time
+			if candle.OpenTime.After(latestTime) {
+				latestTime = candle.OpenTime
 			}
 		}
 	}
@@ -227,8 +230,8 @@ func (c *FCSClient) deduplicate(symbol string, candles []Candle) []Candle {
 
 // FetchAllSymbols fetches candles for all configured symbols.
 // FCS free tier: 3 req/min (spaced with delay).
-func (c *FCSClient) FetchAllSymbols(ctx context.Context) ([]Candle, error) {
-	var all []Candle
+func (c *FCSClient) FetchAllSymbols(ctx context.Context) ([]domain.Candle, error) {
+	var all []domain.Candle
 	for i, symbol := range c.config.Symbols {
 		if i > 0 {
 			// Space requests to respect the 3 req/min rate limit on FCS free accounts
@@ -248,8 +251,22 @@ func (c *FCSClient) FetchAllSymbols(ctx context.Context) ([]Candle, error) {
 	return all, nil
 }
 
-func (c *FCSClient) parseCandles(symbol string, raw []fcsCandle) []Candle {
-	candles := make([]Candle, 0, len(raw))
+// parseCandles converts the vendor payload into validated domain candles.
+//
+// Prices convert to integer ticks once, here, at the verified instrument
+// precision; an unresolved symbol or unknown interval fails closed (returns
+// an error) rather than guessing a scale, matching resolve() in source.go.
+func (c *FCSClient) parseCandles(symbol string, raw []fcsCandle) ([]domain.Candle, error) {
+	spec, ok := instrument.Lookup(symbol)
+	if !ok {
+		return nil, &UnknownInstrumentError{Symbol: symbol}
+	}
+	timeframe := IntervalDuration(c.config.Interval)
+	if timeframe <= 0 {
+		return nil, fmt.Errorf("feed: fcs unknown interval %q", c.config.Interval)
+	}
+
+	candles := make([]domain.Candle, 0, len(raw))
 	for _, v := range raw {
 		t := parseFCSTime(v.TM, v.Time)
 		if t.IsZero() {
@@ -262,22 +279,20 @@ func (c *FCSClient) parseCandles(symbol string, raw []fcsCandle) []Candle {
 
 		// FCS timestamps a bar by its open.
 		barOpen, barClose := resolveBarTimes(t, c.config.Interval)
-		candle := Candle{
-			Symbol:    symbol,
-			Interval:  c.config.Interval,
-			Open:      open,
-			High:      high,
-			Low:       low,
-			Close:     close_,
-			Time:      barOpen,
-			OpenTime:  barOpen,
-			CloseTime: barClose,
+		candle := domain.Candle{
+			Source: "fcs", Symbol: symbol, Timeframe: timeframe,
+			OpenTime: barOpen, CloseTime: barClose,
+			Open:      domain.Price(spec.Ticks(open)),
+			High:      domain.Price(spec.Ticks(high)),
+			Low:       domain.Price(spec.Ticks(low)),
+			Close:     domain.Price(spec.Ticks(close_)),
+			TickCount: 1,
 		}
 		if err := candle.Validate(); err == nil {
 			candles = append(candles, candle)
 		}
 	}
-	return candles
+	return candles, nil
 }
 
 func parseFCSFloat(v interface{}) float64 {

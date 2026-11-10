@@ -92,9 +92,10 @@ func run(ctx context.Context, study Study, manifest experiment.Manifest, auditDi
 	definitions := make(map[string]string, len(study.Candidates))
 	for _, candidate := range study.Candidates {
 		definitions[candidate.ID], err = experiment.Digest(struct {
-			ICC       any
-			Execution any
-		}{candidate.Scenario.ICC, candidate.Scenario.Execution})
+			Detector       any
+			DetectorParams any
+			Execution      any
+		}{candidate.Scenario.Detector, candidate.Scenario.DetectorParams, candidate.Scenario.Execution})
 		if err != nil {
 			return Result{}, err
 		}

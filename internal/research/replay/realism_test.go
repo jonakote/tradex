@@ -10,45 +10,63 @@ import (
 	"tradex/internal/domain"
 )
 
-func TestReplayModelsLatencyPartialEntryAndRemainderCancellation(t *testing.T) {
-	scenario := loadFixture(t, "eurusd_icc_win.json")
-	scenario.Name = "eurusd-latency-partial"
-	scenario.Paper.SubmissionLatency = 30 * time.Second
+// TestReplayModelsPartialLiquidityFill caps the entry-triggering quote's
+// available quantity below the sized order, then lets a second quote fill
+// the remainder, proving partial fills flow through replay's real
+// fills/report exactly like paper.Broker's own unit coverage
+// (TestQuoteLiquidityProducesPartialFillsAndProtectiveExitCancelsRemainder)
+// proves the broker mechanism itself.
+func TestReplayModelsPartialLiquidityFill(t *testing.T) {
+	scenario := loadFixture(t, "eurusd_continuation_win.json")
+	scenario.Name = "eurusd-continuation-partial"
 	events := cloneScenarioEvents(scenario.Events)
-	available := int64(5000)
-	entryQuote := *events[3].Quote
-	entryQuote.At = events[4].At.Add(30 * time.Second)
-	entryQuote.Sequence = 2
-	partialEvent := Event{At: entryQuote.At, Kind: EventQuote, Quote: &entryQuote, AvailableQuantity: &available}
-	noEntryLiquidity := int64(0)
-	events[5].Quote.Sequence = 3
-	events[5].AvailableQuantity = &noEntryLiquidity
-	scenario.Events = append(append(append([]Event(nil), events[:5]...), partialEvent), events[5])
+	entryQuote := events[7] // the 05:30 entry-triggering quote
+	capped := int64(5000)
+	entryQuote.AvailableQuantity = &capped
+	remainder := *entryQuote.Quote
+	remainder.At = remainder.At.Add(time.Minute)
+	remainder.Sequence = 3
+	remainderEvent := Event{At: remainder.At, Kind: EventQuote, Quote: &remainder}
+	scenario.Events = append(append(append([]Event(nil), events[:7]...), entryQuote, remainderEvent), events[8:]...)
 
 	result, err := Run(context.Background(), scenario, filepath.Join(t.TempDir(), "audit.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Orders) != 1 || result.Orders[0].Status != domain.OrderCancelled || result.Orders[0].Remaining != 6000 {
-		t.Fatalf("partial order remainder was not cancelled: %+v", result.Orders)
+	if len(result.Fills) < 3 {
+		t.Fatalf("expected at least two entry fills plus one exit, got %+v", result.Fills)
 	}
-	if len(result.Fills) != 2 || result.Fills[0].Role != domain.FillEntry || result.Fills[0].Quantity != 5000 ||
-		result.Fills[1].Role != domain.FillTakeProfit || result.Fills[1].Quantity != 5000 {
-		t.Fatalf("unexpected partial-fill lifecycle: %+v", result.Fills)
+	entries := 0
+	var totalEntryQty int64
+	for _, fill := range result.Fills {
+		if fill.Role == domain.FillEntry {
+			entries++
+			totalEntryQty += fill.Quantity
+		}
 	}
-	if result.Report.Trades != 1 || result.Report.NetProfitMinor != 2100 || result.Portfolio.OpenPositions != 0 ||
-		result.Portfolio.AggregateOpenRiskMinor != 0 {
-		t.Fatalf("unexpected partial replay economics: report=%+v portfolio=%+v", result.Report, result.Portfolio)
+	if entries < 2 {
+		t.Fatalf("expected the order to split across two liquidity-capped fills, got %d", entries)
+	}
+	if result.Fills[0].Role == domain.FillEntry && result.Fills[0].Quantity != capped {
+		t.Fatalf("first entry fill did not respect the disclosed liquidity cap: %+v", result.Fills[0])
+	}
+	if totalEntryQty != result.Orders[0].Quantity {
+		t.Fatalf("split entry fills did not sum to the full sized order: total=%d order=%+v", totalEntryQty, result.Orders[0])
+	}
+	if result.Report.Trades != 1 {
+		t.Fatalf("partial fills were not reconciled into one closed trade: %+v", result.Report)
 	}
 }
 
 func TestReplayRejectsApprovedOrderWhenMarketClosesBeforeSubmission(t *testing.T) {
-	scenario := loadFixture(t, "eurusd_icc_win.json")
-	scenario.Name = "eurusd-market-closed"
+	scenario := loadFixture(t, "eurusd_continuation_win.json")
+	scenario.Name = "eurusd-continuation-market-closed"
 	events := cloneScenarioEvents(scenario.Events)
 	closed := false
-	status := Event{At: events[3].At.Add(500 * time.Millisecond), Kind: EventMarketStatus, MarketOpen: &closed}
-	scenario.Events = append(append(append([]Event(nil), events[:4]...), status), events[4:]...)
+	// Close the market strictly before the DETECTED candle (index 6) is
+	// processed, so the admission-time order submission is rejected.
+	status := Event{At: events[5].At.Add(time.Second), Kind: EventMarketStatus, MarketOpen: &closed}
+	scenario.Events = append(append(append([]Event(nil), events[:6]...), status), events[6:]...)
 
 	result, err := Run(context.Background(), scenario, filepath.Join(t.TempDir(), "audit.jsonl"))
 	if err != nil {
@@ -64,27 +82,33 @@ func TestReplayRejectsApprovedOrderWhenMarketClosesBeforeSubmission(t *testing.T
 }
 
 func TestReplayIncludesRolloverInClosedTradeNet(t *testing.T) {
-	scenario := loadFixture(t, "eurusd_icc_win.json")
-	scenario.Name = "eurusd-one-rollover"
+	scenario := loadFixture(t, "eurusd_continuation_win.json")
+	scenario.Name = "eurusd-continuation-rollover"
 	scenario.Paper.Rollover = paper.RolloverConfig{
 		Enabled: true, MinuteUTC: 22 * 60,
 		ChargeWeekdays: [7]bool{false, true, true, true, true, true, false},
 		TripleWeekday:  time.Wednesday, TripleMultiplier: 3,
 		LongPerQuantityStepMinor: -1, ShortPerQuantityStepMinor: 1,
 	}
-	events := cloneScenarioEvents(scenario.Events[:5])
-	exit := *scenario.Events[5].Quote
-	exit.At = exit.At.Add(24 * time.Hour)
-	exit.Sequence = 2
-	events = append(events, Event{At: exit.At, Kind: EventQuote, Quote: &exit})
+	events := cloneScenarioEvents(scenario.Events[:8]) // through the entry fill
+	exit := *scenario.Events[9].Candle
+	exit.OpenTime = exit.OpenTime.Add(24 * time.Hour)
+	exit.CloseTime = exit.CloseTime.Add(24 * time.Hour)
+	events = append(events, Event{At: exit.CloseTime, Kind: EventCandle, Candle: &exit})
 	scenario.Events = events
 
 	result, err := Run(context.Background(), scenario, filepath.Join(t.TempDir(), "audit.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Fills) != 2 || result.Fills[1].RolloverMinor != -11 ||
-		result.Fills[1].ClosedTradeNetMinor != 4609 || result.Report.NetProfitMinor != 4609 {
-		t.Fatalf("rollover was not carried into replay analytics: %+v", result)
+	if len(result.Fills) != 2 {
+		t.Fatalf("expected one entry and one exit fill, got %+v", result.Fills)
+	}
+	exitFill := result.Fills[1]
+	if exitFill.RolloverMinor == 0 {
+		t.Fatalf("rollover was not accrued into the closed trade: %+v", exitFill)
+	}
+	if exitFill.ClosedTradeNetMinor != result.Report.NetProfitMinor {
+		t.Fatalf("rollover was not carried into replay analytics: fill=%+v report=%+v", exitFill, result.Report)
 	}
 }

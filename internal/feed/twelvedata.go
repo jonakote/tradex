@@ -14,60 +14,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"tradex/internal/domain"
+	"tradex/internal/instrument"
 )
-
-// Candle represents a completed OHLC bar from the feed.
-type Candle struct {
-	Symbol   string  `json:"symbol"`
-	Interval string  `json:"interval"`
-	Open     float64 `json:"open"`
-	High     float64 `json:"high"`
-	Low      float64 `json:"low"`
-	Close    float64 `json:"close"`
-	Volume   float64 `json:"volume"`
-	// Time is the instant the bar OPENED. Every producer in this package
-	// sets it that way, matching Binance, cTrader and Twelve Data, which all
-	// timestamp a bar by its open.
-	//
-	// This was previously undefined, and consumers disagreed: the market
-	// data manager read it as the open while the signal engine read it as
-	// the close. The engine therefore labelled each bar with the previous
-	// bar's window, stamping a pattern one whole bar before its data
-	// existed and expiring the resulting order window before it opened.
-	// Prefer OpenTime/CloseTime; Time is retained for compatibility.
-	Time time.Time `json:"time"`
-	// OpenTime and CloseTime are the bar's half-open interval
-	// [OpenTime, CloseTime). CloseTime is always OpenTime plus the interval.
-	OpenTime  time.Time `json:"open_time"`
-	CloseTime time.Time `json:"close_time"`
-}
-
-// Bar returns the candle's open and close instants, deriving them from Time
-// when a producer has not set them explicitly.
-func (c Candle) Bar() (time.Time, time.Time) {
-	if !c.OpenTime.IsZero() && !c.CloseTime.IsZero() {
-		return c.OpenTime.UTC(), c.CloseTime.UTC()
-	}
-	return resolveBarTimes(c.Time, c.Interval)
-}
-
-// Validate checks that the candle has sensible values.
-func (c Candle) Validate() error {
-	if c.Symbol == "" || c.Interval == "" {
-		return errors.New("candle requires symbol and interval")
-	}
-	if c.Open <= 0 || c.High <= 0 || c.Low <= 0 || c.Close <= 0 {
-		return errors.New("candle OHLC must be positive")
-	}
-	if c.High < c.Low || c.High < c.Open || c.High < c.Close ||
-		c.Low > c.Open || c.Low > c.Close {
-		return errors.New("invalid candle geometry")
-	}
-	if c.Time.IsZero() {
-		return errors.New("candle time is required")
-	}
-	return nil
-}
 
 // TwelveDataConfig configures the Twelve Data REST client.
 type TwelveDataConfig struct {
@@ -169,8 +119,8 @@ type twelveDataValue struct {
 }
 
 // FetchCandles fetches the most recent completed candles for a single symbol.
-// It returns only new candles since the last fetch (deduplication by time).
-func (c *TwelveDataClient) FetchCandles(ctx context.Context, symbol string) ([]Candle, error) {
+// It returns only new candles since the last fetch (deduplication by open time).
+func (c *TwelveDataClient) FetchCandles(ctx context.Context, symbol string) ([]domain.Candle, error) {
 	url := fmt.Sprintf("%s/time_series?symbol=%s&interval=%s&outputsize=5&timezone=%s&apikey=%s",
 		c.config.baseURL(), symbol, c.config.Interval, c.config.timezone(), c.config.APIKey)
 
@@ -212,13 +162,13 @@ func (c *TwelveDataClient) FetchCandles(ctx context.Context, symbol string) ([]C
 	// Filter out already-seen candles
 	c.mu.Lock()
 	lastTime := c.last[symbol]
-	var newCandles []Candle
+	var newCandles []domain.Candle
 	var latestTime time.Time
 	for _, candle := range candles {
-		if candle.Time.After(lastTime) {
+		if candle.OpenTime.After(lastTime) {
 			newCandles = append(newCandles, candle)
-			if candle.Time.After(latestTime) {
-				latestTime = candle.Time
+			if candle.OpenTime.After(latestTime) {
+				latestTime = candle.OpenTime
 			}
 		}
 	}
@@ -233,8 +183,8 @@ func (c *TwelveDataClient) FetchCandles(ctx context.Context, symbol string) ([]C
 // FetchAllSymbols fetches candles for all configured symbols.
 // It respects the free tier rate limit (8 credits/minute) by spacing requests
 // to ensure no more than 7 requests per minute (one credit each).
-func (c *TwelveDataClient) FetchAllSymbols(ctx context.Context) ([]Candle, error) {
-	var all []Candle
+func (c *TwelveDataClient) FetchAllSymbols(ctx context.Context) ([]domain.Candle, error) {
+	var all []domain.Candle
 	for i, symbol := range c.config.Symbols {
 		if i > 0 {
 			// Free tier: 8 credits/min. Each time_series call = 1 credit.
@@ -256,8 +206,22 @@ func (c *TwelveDataClient) FetchAllSymbols(ctx context.Context) ([]Candle, error
 	return all, nil
 }
 
-func (c *TwelveDataClient) parseCandles(symbol string, data twelveDataResponse) ([]Candle, error) {
-	candles := make([]Candle, 0, len(data.Values))
+// parseCandles converts the vendor payload into validated domain candles.
+//
+// Prices convert to integer ticks once, here, at the verified instrument
+// precision; an unresolved symbol or unknown interval fails closed (returns
+// an error) rather than guessing a scale, matching resolve() in source.go.
+func (c *TwelveDataClient) parseCandles(symbol string, data twelveDataResponse) ([]domain.Candle, error) {
+	spec, ok := instrument.Lookup(symbol)
+	if !ok {
+		return nil, &UnknownInstrumentError{Symbol: symbol}
+	}
+	timeframe := IntervalDuration(c.config.Interval)
+	if timeframe <= 0 {
+		return nil, fmt.Errorf("feed: twelvedata unknown interval %q", c.config.Interval)
+	}
+
+	candles := make([]domain.Candle, 0, len(data.Values))
 	for _, v := range data.Values {
 		t, err := parseTwelveDataTime(v.Datetime)
 		if err != nil {
@@ -271,17 +235,14 @@ func (c *TwelveDataClient) parseCandles(symbol string, data twelveDataResponse) 
 
 		// Twelve Data's `datetime` is the bar's open.
 		barOpen, barClose := resolveBarTimes(t, c.config.Interval)
-		candle := Candle{
-			Symbol:    symbol,
-			Interval:  c.config.Interval,
-			Open:      open,
-			High:      high,
-			Low:       low,
-			Close:     close_,
-			Volume:    vol,
-			Time:      barOpen,
-			OpenTime:  barOpen,
-			CloseTime: barClose,
+		candle := domain.Candle{
+			Source: "twelvedata", Symbol: symbol, Timeframe: timeframe,
+			OpenTime: barOpen, CloseTime: barClose,
+			Open:      domain.Price(spec.Ticks(open)),
+			High:      domain.Price(spec.Ticks(high)),
+			Low:       domain.Price(spec.Ticks(low)),
+			Close:     domain.Price(spec.Ticks(close_)),
+			TickCount: maxUint64(uint64(vol), 1),
 		}
 		if err := candle.Validate(); err == nil {
 			candles = append(candles, candle)
@@ -292,6 +253,16 @@ func (c *TwelveDataClient) parseCandles(symbol string, data twelveDataResponse) 
 		candles[i], candles[j] = candles[j], candles[i]
 	}
 	return candles, nil
+}
+
+// maxUint64 returns the larger of a and b. A bar with no reported volume
+// still occupies time; TickCount must be positive for domain validation, so
+// an absent or zero volume becomes 1 rather than inventing activity.
+func maxUint64(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func parseTwelveDataTime(s string) (time.Time, error) {
@@ -310,15 +281,15 @@ func parseTwelveDataTime(s string) (time.Time, error) {
 type Poller struct {
 	client   *TwelveDataClient
 	interval time.Duration
-	output   chan Candle
+	output   chan domain.Candle
 	done     chan struct{}
 	log      io.Writer // optional destination for poll activity logs
 }
 
 // NewPoller creates a poller that fetches at the given interval and
 // outputs candles to the returned channel.
-func NewPoller(client *TwelveDataClient, pollInterval time.Duration) (*Poller, chan Candle) {
-	ch := make(chan Candle, 128)
+func NewPoller(client *TwelveDataClient, pollInterval time.Duration) (*Poller, chan domain.Candle) {
+	ch := make(chan domain.Candle, 128)
 	return &Poller{
 		client:   client,
 		interval: pollInterval,

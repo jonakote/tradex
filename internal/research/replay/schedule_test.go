@@ -9,7 +9,7 @@ import (
 )
 
 func TestCompileBrokerScheduleInjectsStatusesAndRollover(t *testing.T) {
-	base, err := Load(filepath.Join("testdata", "eurusd_icc_win.json"))
+	base, err := Load(filepath.Join("testdata", "eurusd_continuation_win.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

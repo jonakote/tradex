@@ -91,8 +91,9 @@ func TestFinnhubFetchCandles(t *testing.T) {
 	if len(candles) != 2 {
 		t.Fatalf("expected 2 candles, got %d", len(candles))
 	}
-	if candles[0].Close != 1.0845 || candles[1].Close != 1.0850 {
-		t.Fatalf("unexpected closes: %f, %f", candles[0].Close, candles[1].Close)
+	// EUR/USD is verified at 5 digits.
+	if candles[0].Close != 108450 || candles[1].Close != 108500 {
+		t.Fatalf("unexpected closes: %d, %d", candles[0].Close, candles[1].Close)
 	}
 
 	// Second fetch should deduplicate to zero new candles

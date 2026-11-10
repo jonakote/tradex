@@ -1,0 +1,13 @@
+{
+  "capital": {
+    "symbols": ["EURUSD", "GBPUSD", "AUDUSD", "XAUUSD"],
+    "interval": "1h"
+  },
+  "strategies": ["continuation", "ict", "amn", "structuretrend"],
+  "poll_interval": "1h",
+  "journal": "data/forward_signals_hourly.jsonl",
+  "desktop": false,
+  "telegram": true,
+  "symbol_cooldown": "2h",
+  "group_cooldown": "2h"
+}

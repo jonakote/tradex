@@ -55,20 +55,20 @@ func (c TriangleConfig) Validate() error {
 // from confirmed swings. Upper/lower lines are represented by their endpoint
 // pivots and can be projected without re-reading future candles.
 type TrianglePattern struct {
-	Kind               TriangleKind `json:"kind"`
-	UpperStartIndex    int          `json:"upper_start_index"`
-	UpperEndIndex      int          `json:"upper_end_index"`
-	UpperStartPrice    domain.Price `json:"upper_start_price"`
-	UpperEndPrice      domain.Price `json:"upper_end_price"`
-	LowerStartIndex    int          `json:"lower_start_index"`
-	LowerEndIndex      int          `json:"lower_end_index"`
-	LowerStartPrice    domain.Price `json:"lower_start_price"`
-	LowerEndPrice      domain.Price `json:"lower_end_price"`
-	StartAt            time.Time    `json:"start_at"`
-	DetectedAt         time.Time    `json:"detected_at"`
-	LastPivotIndex     int          `json:"last_pivot_index"`
-	ApexPivotIndex     float64      `json:"apex_pivot_index"`
-	ToleranceTicks     int64        `json:"tolerance_ticks"`
+	Kind            TriangleKind `json:"kind"`
+	UpperStartIndex int          `json:"upper_start_index"`
+	UpperEndIndex   int          `json:"upper_end_index"`
+	UpperStartPrice domain.Price `json:"upper_start_price"`
+	UpperEndPrice   domain.Price `json:"upper_end_price"`
+	LowerStartIndex int          `json:"lower_start_index"`
+	LowerEndIndex   int          `json:"lower_end_index"`
+	LowerStartPrice domain.Price `json:"lower_start_price"`
+	LowerEndPrice   domain.Price `json:"lower_end_price"`
+	StartAt         time.Time    `json:"start_at"`
+	DetectedAt      time.Time    `json:"detected_at"`
+	LastPivotIndex  int          `json:"last_pivot_index"`
+	ApexPivotIndex  float64      `json:"apex_pivot_index"`
+	ToleranceTicks  int64        `json:"tolerance_ticks"`
 }
 
 func (p TrianglePattern) upperAt(index int) float64 {

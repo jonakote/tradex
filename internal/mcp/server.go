@@ -706,7 +706,11 @@ func (s *Server) resources() []map[string]any {
 		{"uri": "tradex://docs/TRADING_BOT_PLAN.md", "name": "Trading bot plan", "description": "Strategy, risk, execution, and research plan", "mimeType": "text/markdown"},
 		{"uri": "tradex://docs/IMPLEMENTATION_STATUS.md", "name": "Implementation status", "description": "Implemented milestones and verification status", "mimeType": "text/markdown"},
 		{"uri": "tradex://docs/TRIANGLE_PATTERN_SPEC.md", "name": "Triangle pattern specification", "description": "Versioned triangle geometry and breakout research contract", "mimeType": "text/markdown"},
-		{"uri": "tradex://docs/CANDLE_RANGE_SPEC.md", "name": "Candle Range Theory specification", "description": "Versioned CRT purge contract, determinism rules, and measured baseline", "mimeType": "text/markdown"},
+		{"uri": "tradex://docs/CONTINUATION_SPEC.md", "name": "Break-and-retest continuation specification", "description": "Versioned continuation contract, determinism rules, and measured baseline", "mimeType": "text/markdown"},
+		{"uri": "tradex://docs/STRUCTURETREND_SPEC.md", "name": "Structure break + trend specification", "description": "Versioned structure-break-and-trend contract, determinism rules, and measured baseline", "mimeType": "text/markdown"},
+		{"uri": "tradex://docs/TRIANGLEBREAKOUT_SPEC.md", "name": "Triangle breakout specification", "description": "Versioned triangle-breakout entry/stop/target contract, determinism rules, and measured baseline", "mimeType": "text/markdown"},
+		{"uri": "tradex://docs/MEANREVERSION_SPEC.md", "name": "Mean-reversion (IBS) specification", "description": "Internal Bar Strength signal-vs-drift measurement across instruments", "mimeType": "text/markdown"},
+		{"uri": "tradex://docs/STRATEGY_SUITE.md", "name": "Strategy suite & multi-strategy engine", "description": "Detector interface, ICT and AMN specs, and measured status of every integrated strategy", "mimeType": "text/markdown"},
 		{"uri": "tradex://docs/MARKET_DATA_SOURCES.md", "name": "Market data sources", "description": "Verified source properties, known vendor defects, and request costs", "mimeType": "text/markdown"},
 	}
 	if s.specRoot == "" {
@@ -744,7 +748,11 @@ func (s *Server) readResource(params json.RawMessage) (map[string]any, *callErro
 		"tradex://docs/TRADING_BOT_PLAN.md":      "docs/TRADING_BOT_PLAN.md",
 		"tradex://docs/IMPLEMENTATION_STATUS.md": "docs/IMPLEMENTATION_STATUS.md",
 		"tradex://docs/TRIANGLE_PATTERN_SPEC.md": "docs/TRIANGLE_PATTERN_SPEC.md",
-		"tradex://docs/CANDLE_RANGE_SPEC.md":     "docs/CANDLE_RANGE_SPEC.md",
+		"tradex://docs/CONTINUATION_SPEC.md":     "docs/CONTINUATION_SPEC.md",
+		"tradex://docs/STRUCTURETREND_SPEC.md":   "docs/STRUCTURETREND_SPEC.md",
+		"tradex://docs/TRIANGLEBREAKOUT_SPEC.md": "docs/TRIANGLEBREAKOUT_SPEC.md",
+		"tradex://docs/MEANREVERSION_SPEC.md":    "docs/MEANREVERSION_SPEC.md",
+		"tradex://docs/STRATEGY_SUITE.md":        "docs/STRATEGY_SUITE.md",
 		"tradex://docs/MARKET_DATA_SOURCES.md":   "docs/MARKET_DATA_SOURCES.md",
 	}
 	var path string

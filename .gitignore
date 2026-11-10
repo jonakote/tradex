@@ -3,6 +3,19 @@
 /dist/
 *.test
 coverage.out
+/tradex
+/tradex-mcp
+/amnmfe
+/amnmtf
+/contmfe
+/ibsv2
+/ictmfe
+/stmfe
+
+# Research datasets, signal journal and runtime logs (bulky / machine-local)
+/data/*.csv
+/data/*.jsonl
+/data/*.log
 
 # Local configuration and secrets
 .env

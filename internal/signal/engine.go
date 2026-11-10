@@ -5,14 +5,12 @@ package signal
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"tradex/internal/domain"
 	"tradex/internal/features"
-	"tradex/internal/feed"
 	"tradex/internal/instrument"
 )
 
@@ -116,12 +114,6 @@ type EngineConfig struct {
 	// with trades whose windows closed weeks earlier. Zero disables the
 	// check, which is correct for replay and for tests.
 	MaxSignalAgeBars int `json:"max_signal_age_bars"`
-	// EnableCRT enables the deterministic Candle Range Theory research
-	// strategy. It emits the armed setup only: entry is a resting limit, and
-	// fill/stop/target adjudication requires a confirmation-timeframe stream
-	// that this engine does not consume. See docs/CANDLE_RANGE_SPEC.md.
-	EnableCRT bool                       `json:"enable_crt"`
-	CRT       features.CandleRangeConfig `json:"crt"`
 }
 
 // DefaultEngineConfig returns sensible defaults.
@@ -135,8 +127,6 @@ func DefaultEngineConfig() EngineConfig {
 		SignalExpiry:   4 * time.Hour,
 		EnableTriangle: true,
 		Triangle:       features.DefaultTriangleConfig(),
-		EnableCRT:      false,
-		CRT:            features.DefaultCandleRangeConfig(),
 	}
 }
 
@@ -147,7 +137,7 @@ type symbolState struct {
 	swings           []features.Swing
 	trend            features.Trend
 	lastBreak        *features.StructureBreak
-	candles          []feed.Candle
+	candles          []domain.Candle
 	barsSeen         int
 	triangle         *features.TrianglePattern
 	triangleSignaled bool
@@ -155,16 +145,12 @@ type symbolState struct {
 	// means "may emit", so a state built directly (replay, tests) behaves
 	// exactly as before.
 	emitSuppressed bool
-	// previous is the last completed candle, held because a candle range is
-	// a two-candle pattern.
-	previous   *domain.Candle
-	crtLastArm time.Time
 }
 
 // Engine processes candles and emits trade signals.
 type Engine struct {
 	config EngineConfig
-	states map[string]*symbolState // key: "SYMBOL:INTERVAL"
+	states map[string]*symbolState // key: "SYMBOL:TIMEFRAME"
 	output chan Signal
 	// Several feed pollers call ProcessCandle from their own goroutines, so
 	// the state map needs guarding.
@@ -181,9 +167,6 @@ func NewEngine(cfg EngineConfig) (*Engine, chan Signal) {
 	if cfg.TriangleBreakoutBufferTicks < 0 {
 		cfg.TriangleBreakoutBufferTicks = 0
 	}
-	if cfg.EnableCRT && cfg.CRT.Validate() != nil {
-		cfg.CRT = features.DefaultCandleRangeConfig()
-	}
 	ch := make(chan Signal, 32)
 	return &Engine{
 		config: cfg,
@@ -193,13 +176,20 @@ func NewEngine(cfg EngineConfig) (*Engine, chan Signal) {
 	}, ch
 }
 
-// ProcessCandle ingests a candle and may emit a signal.
-func (e *Engine) ProcessCandle(candle feed.Candle) {
+// ProcessCandle ingests one closed candle and may emit a signal.
+//
+// It takes domain.Candle directly: internal/feed yields exactly one candle
+// type with integer-tick prices, and every price-action computation below
+// (swings, structure, triangle geometry, entry/stop/target) stays in those
+// ticks. A float64 price appears only in the final Signal, which exists
+// purely for human display -- this is the single conversion point, matching
+// the "one candle type, converted once, at the boundary" rule.
+func (e *Engine) ProcessCandle(candle domain.Candle) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	key := candle.Symbol + ":" + candle.Interval
-	state := e.getOrCreateState(key, candle)
+	key := candle.Symbol + ":" + timeframeLabel(candle.Timeframe)
+	state := e.getOrCreateState(key)
 	if state == nil {
 		return
 	}
@@ -215,14 +205,8 @@ func (e *Engine) ProcessCandle(candle feed.Candle) {
 		state.candles = state.candles[len(state.candles)-100:]
 	}
 
-	// Convert to domain candle for swing detection
-	domCandle := feedToDomainCandle(candle)
-	if domCandle == nil {
-		return
-	}
-
 	// Detect swings
-	swings, err := state.detector.Push(*domCandle)
+	swings, err := state.detector.Push(candle)
 	if err != nil {
 		return
 	}
@@ -235,7 +219,7 @@ func (e *Engine) ProcessCandle(candle feed.Candle) {
 	state.trend = features.ClassifyTrend(state.swings)
 
 	// Detect structure breaks
-	breaks := state.structure.OnCandle(*domCandle, swings)
+	breaks := state.structure.OnCandle(candle, swings)
 	for i := range breaks {
 		brk := breaks[i]
 		state.lastBreak = &brk
@@ -245,108 +229,23 @@ func (e *Engine) ProcessCandle(candle feed.Candle) {
 		if pattern, ok := features.DetectTriangle(state.swings, e.config.Triangle); ok {
 			state.triangle = &pattern
 		}
-		if e.evaluateTriangleSignal(state, candle, *domCandle) {
+		if e.evaluateTriangleSignal(state, candle) {
 			return
 		}
 	}
-
-	if e.config.EnableCRT {
-		if e.evaluateCandleRangeSignal(state, candle, *domCandle) {
-			state.previous = domCandle
-			return
-		}
-	}
-	state.previous = domCandle
 
 	// Generate signal from structure break + trend alignment
 	e.evaluateSignal(state, candle)
 }
 
-// evaluateCandleRangeSignal emits an armed Candle Range Theory setup. The
-// pattern is only knowable at the purge candle's close, so this runs on
-// completed candles exclusively, and the emitted entry is a resting limit at
-// the purge candle's equilibrium rather than a market price.
-//
-// Only the ARMED state is reported. Fill, stop, target, and expiry
-// adjudication needs a confirmation-timeframe stream, which this engine does
-// not consume; that path lives in internal/research/crtlab.
-func (e *Engine) evaluateCandleRangeSignal(state *symbolState, candle feed.Candle,
-	domCandle domain.Candle) bool {
-
-	if state.previous == nil {
-		return false
-	}
-	config := e.config.CRT
-	scale := priceScale(candle.Symbol)
-	if scale <= 0 {
-		return false
-	}
-	// A fixed tick floor is meaningless across instruments: derive one from
-	// the symbol's price scale when the operator has not set it.
-	if config.MinRangeTicks <= 0 {
-		config.MinRangeTicks = int64(scale) / 1000
-		if config.MinRangeTicks < 1 {
-			config.MinRangeTicks = 1
-		}
-	}
-
-	pattern, ok := features.DetectCandleRange(*state.previous, domCandle, config)
-	if !ok {
-		return false
-	}
-	// One signal per pattern, even if the feed replays the same closed bar.
-	if !pattern.DetectedAt.After(state.crtLastArm) {
-		return false
-	}
-
-	direction := "BUY"
-	if pattern.Kind == features.CandleRangeBearish {
-		direction = "SELL"
-	}
-	entry := float64(pattern.EntryReference) / scale
-	stopLoss := float64(pattern.StopReference) / scale
-	takeProfit := float64(pattern.TargetReference) / scale
-	risk := math.Abs(entry - stopLoss)
-	if risk <= 0 {
-		return false
-	}
-
-	state.crtLastArm = pattern.DetectedAt
-	// Stamp the instant the pattern became knowable: the bar's close.
-	_, barClose := candle.Bar()
-	return e.emit(state, Signal{
-		Time:       barClose,
-		Symbol:     candle.Symbol,
-		Direction:  direction,
-		Entry:      entry,
-		StopLoss:   stopLoss,
-		TakeProfit: takeProfit,
-		RiskReward: float64(pattern.RewardRiskBps) / 10000,
-		Lots:       e.calculateLots(candle.Symbol, risk),
-		EntryType:  "LIMIT",
-		Timeframe:  candle.Interval,
-		Session:    detectSession(barClose),
-		Strategy:   "Candle Range Theory (" + features.CandleRangeSpecVersion + "): " + string(pattern.Kind),
-		Reason: fmt.Sprintf(
-			"purge of %s by %d ticks (%s) closed back inside the range; limit rests at the purge equilibrium",
-			strconv.FormatFloat(float64(pattern.SweptLevel)/scale, 'f', priceDigits(candle.Symbol), 64),
-			pattern.PurgeTicks,
-			strconv.FormatFloat(float64(pattern.PurgeTicks)/scale, 'f', priceDigits(candle.Symbol), 64)),
-		// The spec expires an unfilled limit when the expansion candle
-		// closes, which is one setup bar after detection.
-		Expires: barClose.Add(intervalDuration(candle.Interval)),
-	})
-}
-
 // isFresh reports whether a completed candle closed recently enough for its
 // setup to still be actionable. Age is measured in the candle's own bars, so
 // the same budget is sensible on 15m and on daily data.
-func (e *Engine) isFresh(candle feed.Candle) bool {
+func (e *Engine) isFresh(candle domain.Candle) bool {
 	if e.config.MaxSignalAgeBars <= 0 {
 		return true
 	}
-	interval := intervalDuration(candle.Interval)
-	if interval <= 0 {
+	if candle.Timeframe <= 0 {
 		return true
 	}
 	clock := e.now
@@ -356,12 +255,11 @@ func (e *Engine) isFresh(candle feed.Candle) bool {
 	// Age runs from the bar's close: that is when its pattern became
 	// knowable. Measuring from the open overstates age by a full bar and
 	// suppresses genuinely fresh signals.
-	_, closeTime := candle.Bar()
-	if closeTime.IsZero() {
+	if candle.CloseTime.IsZero() {
 		return true
 	}
-	return clock().UTC().Sub(closeTime) <=
-		time.Duration(e.config.MaxSignalAgeBars)*interval
+	return clock().UTC().Sub(candle.CloseTime) <=
+		time.Duration(e.config.MaxSignalAgeBars)*candle.Timeframe
 }
 
 // emit publishes a signal unless the originating candle is stale. It never
@@ -377,7 +275,7 @@ func (e *Engine) emit(state *symbolState, signal Signal) bool {
 	return true
 }
 
-func (e *Engine) getOrCreateState(key string, candle feed.Candle) *symbolState {
+func (e *Engine) getOrCreateState(key string) *symbolState {
 	if state, exists := e.states[key]; exists {
 		return state
 	}
@@ -393,69 +291,71 @@ func (e *Engine) getOrCreateState(key string, candle feed.Candle) *symbolState {
 	return state
 }
 
-func (e *Engine) evaluateTriangleSignal(state *symbolState, candle feed.Candle, domCandle domain.Candle) bool {
+func (e *Engine) evaluateTriangleSignal(state *symbolState, candle domain.Candle) bool {
 	pattern := state.triangle
-	if pattern == nil || state.triangleSignaled || !candle.Time.After(pattern.DetectedAt) {
+	if pattern == nil || state.triangleSignaled || !candle.CloseTime.After(pattern.DetectedAt) {
 		return false
 	}
 
-	direction, broke := pattern.Breakout(domCandle.Close, state.barsSeen-1, domain.Price(e.config.TriangleBreakoutBufferTicks))
+	direction, broke := pattern.Breakout(candle.Close, state.barsSeen-1, domain.Price(e.config.TriangleBreakoutBufferTicks))
 	if !broke {
 		return false
 	}
 
-	scale := priceScale(candle.Symbol)
-	if scale <= 0 {
+	spec, ok := instrument.Lookup(candle.Symbol)
+	if !ok {
 		return false
 	}
-	entry := candle.Close
-	boundary := float64(pattern.LowerBoundaryAt(state.barsSeen-1)) / float64(scale)
-	var stopLoss, takeProfit float64
+	entryTicks := candle.Close
+	boundaryTicks := pattern.LowerBoundaryAt(state.barsSeen - 1)
+	var stopTicks, targetTicks domain.Price
 	var signalDirection string
 	switch direction {
 	case features.BreakBullish:
 		signalDirection = "BUY"
-		stopLoss = math.Min(findRecentLow(state.candles), boundary)
-		if stopLoss >= entry {
+		stopTicks = minPrice(findRecentLow(state.candles), boundaryTicks)
+		if stopTicks >= entryTicks {
 			return false
 		}
-		takeProfit = entry + (entry-stopLoss)*e.config.MinRewardRisk
+		riskTicks := entryTicks - stopTicks
+		targetTicks = entryTicks + scaleRiskTicks(riskTicks, e.config.MinRewardRisk)
 	case features.BreakBearish:
 		signalDirection = "SELL"
-		boundary = float64(pattern.UpperBoundaryAt(state.barsSeen-1)) / float64(scale)
-		stopLoss = math.Max(findRecentHigh(state.candles), boundary)
-		if stopLoss <= entry {
+		boundaryTicks = pattern.UpperBoundaryAt(state.barsSeen - 1)
+		stopTicks = maxPrice(findRecentHigh(state.candles), boundaryTicks)
+		if stopTicks <= entryTicks {
 			return false
 		}
-		takeProfit = entry - (stopLoss-entry)*e.config.MinRewardRisk
+		riskTicks := stopTicks - entryTicks
+		targetTicks = entryTicks - scaleRiskTicks(riskTicks, e.config.MinRewardRisk)
 	default:
 		return false
 	}
 
-	risk := math.Abs(entry - stopLoss)
-	if risk <= 0 || math.Abs(takeProfit-entry)/risk < e.config.MinRewardRisk {
+	riskTicks := absPrice(entryTicks - stopTicks)
+	rewardTicks := absPrice(targetTicks - entryTicks)
+	if riskTicks <= 0 || float64(rewardTicks)/float64(riskTicks) < e.config.MinRewardRisk {
 		return false
 	}
 	state.triangleSignaled = true
-	_, barClose := candle.Bar()
 	return e.emit(state, Signal{
-		Time:       barClose,
+		Time:       candle.CloseTime,
 		Symbol:     candle.Symbol,
 		Direction:  signalDirection,
-		Entry:      entry,
-		StopLoss:   stopLoss,
-		TakeProfit: takeProfit,
-		RiskReward: math.Abs(takeProfit-entry) / risk,
-		Lots:       e.calculateLots(candle.Symbol, risk),
-		Timeframe:  candle.Interval,
-		Session:    detectSession(barClose),
+		Entry:      spec.Price(int64(entryTicks)),
+		StopLoss:   spec.Price(int64(stopTicks)),
+		TakeProfit: spec.Price(int64(targetTicks)),
+		RiskReward: float64(rewardTicks) / float64(riskTicks),
+		Lots:       e.calculateLots(candle.Symbol, spec.Price(int64(riskTicks))),
+		Timeframe:  timeframeLabel(candle.Timeframe),
+		Session:    detectSession(candle.CloseTime),
 		Strategy:   "Triangle Breakout: " + string(pattern.Kind),
 		Reason:     fmt.Sprintf("confirmed %s close broke the projected triangle boundary", pattern.Kind),
-		Expires:    barClose.Add(e.config.SignalExpiry),
+		Expires:    candle.CloseTime.Add(e.config.SignalExpiry),
 	})
 }
 
-func (e *Engine) evaluateSignal(state *symbolState, candle feed.Candle) {
+func (e *Engine) evaluateSignal(state *symbolState, candle domain.Candle) {
 	if state.lastBreak == nil || state.trend == features.TrendNeutral {
 		return
 	}
@@ -470,69 +370,73 @@ func (e *Engine) evaluateSignal(state *symbolState, candle feed.Candle) {
 	if len(state.candles) < 2 {
 		return
 	}
-	breakAge := candle.Time.Sub(brk.KnownAt)
-	maxAge := intervalDuration(candle.Interval) * 2
+	breakAge := candle.CloseTime.Sub(brk.KnownAt)
+	maxAge := candle.Timeframe * 2
 	if breakAge > maxAge || breakAge < 0 {
 		return
 	}
 
+	spec, ok := instrument.Lookup(candle.Symbol)
+	if !ok {
+		return
+	}
+
 	var direction string
-	var entry, sl, tp float64
+	var entryTicks, slTicks, tpTicks domain.Price
 
 	switch {
 	case brk.Direction == features.BreakBullish && state.trend == features.TrendBullish:
 		direction = "BUY"
-		entry = candle.Close
+		entryTicks = candle.Close
 		// Stop below the broken swing low or recent low
-		sl = findRecentLow(state.candles)
-		if sl >= entry {
+		slTicks = findRecentLow(state.candles)
+		if slTicks >= entryTicks {
 			return // Invalid: SL above entry
 		}
-		risk := entry - sl
-		tp = entry + risk*e.config.MinRewardRisk
+		riskTicks := entryTicks - slTicks
+		tpTicks = entryTicks + scaleRiskTicks(riskTicks, e.config.MinRewardRisk)
 
 	case brk.Direction == features.BreakBearish && state.trend == features.TrendBearish:
 		direction = "SELL"
-		entry = candle.Close
+		entryTicks = candle.Close
 		// Stop above the broken swing high or recent high
-		sl = findRecentHigh(state.candles)
-		if sl <= entry {
+		slTicks = findRecentHigh(state.candles)
+		if slTicks <= entryTicks {
 			return // Invalid: SL below entry
 		}
-		risk := sl - entry
-		tp = entry - risk*e.config.MinRewardRisk
+		riskTicks := slTicks - entryTicks
+		tpTicks = entryTicks - scaleRiskTicks(riskTicks, e.config.MinRewardRisk)
 
 	default:
 		return // No alignment
 	}
 
-	risk := math.Abs(entry - sl)
-	reward := math.Abs(tp - entry)
-	if risk <= 0 {
+	riskTicks := absPrice(entryTicks - slTicks)
+	rewardTicks := absPrice(tpTicks - entryTicks)
+	if riskTicks <= 0 {
 		return
 	}
-	rr := reward / risk
+	rr := float64(rewardTicks) / float64(riskTicks)
 	if rr < e.config.MinRewardRisk {
 		return
 	}
 
-	lots := e.calculateLots(candle.Symbol, risk)
+	lots := e.calculateLots(candle.Symbol, spec.Price(int64(riskTicks)))
 
-	_, barClose := candle.Bar()
 	signal := Signal{
-		Time:       barClose,
+		Time:       candle.CloseTime,
 		Symbol:     candle.Symbol,
 		Direction:  direction,
-		Entry:      entry,
-		StopLoss:   sl,
-		TakeProfit: tp,
+		Entry:      spec.Price(int64(entryTicks)),
+		StopLoss:   spec.Price(int64(slTicks)),
+		TakeProfit: spec.Price(int64(tpTicks)),
 		RiskReward: rr,
 		Lots:       lots,
-		Timeframe:  candle.Interval,
-		Session:    detectSession(barClose),
+		Timeframe:  timeframeLabel(candle.Timeframe),
+		Session:    detectSession(candle.CloseTime),
 		Strategy:   "Structure Break + Trend",
 		Reason:     fmt.Sprintf("%s break aligned with %s trend", brk.Direction, state.trend),
-		Expires:    barClose.Add(e.config.SignalExpiry),
+		Expires:    candle.CloseTime.Add(e.config.SignalExpiry),
 	}
 
 	// Clear the break so we don't signal again
@@ -571,57 +475,50 @@ func (e *Engine) calculateLots(symbol string, riskInPrice float64) float64 {
 
 // ---------- Helpers ----------
 
-func feedToDomainCandle(c feed.Candle) *domain.Candle {
-	tf := intervalDuration(c.Interval)
-	if tf == 0 {
-		return nil
-	}
-	// Use the boundaries the producer declared. Inferring them from a single
-	// timestamp requires guessing whether the vendor stamps a bar by its
-	// open or its close, and guessing wrong shifts every candle by a bar.
-	openTime, closeTime := c.Bar()
-	if openTime.IsZero() || closeTime.IsZero() {
-		return nil
-	}
-	// Fail closed on an unverified instrument: processing it would require
-	// assuming a tick size, and every downstream tick parameter would then
-	// mean something different from what the operator configured.
-	spec, ok := instrument.Lookup(c.Symbol)
-	if !ok {
-		return nil
-	}
-	return &domain.Candle{
-		Source:    "feed",
-		Symbol:    c.Symbol,
-		Timeframe: tf,
-		OpenTime:  openTime,
-		CloseTime: closeTime,
-		Open:      domain.Price(spec.Ticks(c.Open)),
-		High:      domain.Price(spec.Ticks(c.High)),
-		Low:       domain.Price(spec.Ticks(c.Low)),
-		Close:     domain.Price(spec.Ticks(c.Close)),
-		TickCount: max(uint64(c.Volume), 1),
-	}
+// scaleRiskTicks scales a risk distance in ticks by a reward:risk ratio,
+// staying in integer ticks (rounded to the nearest tick) rather than
+// round-tripping through a price float.
+func scaleRiskTicks(riskTicks domain.Price, ratio float64) domain.Price {
+	return domain.Price(math.Round(float64(riskTicks) * ratio))
 }
 
-// intervalDuration delegates to the shared feed table, which covers every
-// vendor spelling. A local copy previously knew only the Twelve Data forms,
-// so a Binance "15m" or "1d" stream resolved to zero and every candle was
-// silently dropped.
-func intervalDuration(interval string) time.Duration {
-	return feed.IntervalDuration(interval)
+func absPrice(value domain.Price) domain.Price {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
-// priceScale returns the verified ticks-per-unit for a symbol, or 0 when the
-// instrument is not in the verified registry. Callers must treat 0 as "do not
-// process": a guessed scale silently changes the meaning of every
-// tick-denominated parameter.
-func priceScale(symbol string) float64 {
-	spec, ok := instrument.Lookup(symbol)
-	if !ok {
-		return 0
+func minPrice(a, b domain.Price) domain.Price {
+	if a < b {
+		return a
 	}
-	return float64(spec.PriceScale)
+	return b
+}
+
+func maxPrice(a, b domain.Price) domain.Price {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// timeframeLabel renders a candle timeframe for display and for the
+// per-symbol state key. It does not need to match any vendor's interval
+// spelling -- it only needs to be stable and human-readable.
+func timeframeLabel(d time.Duration) string {
+	switch {
+	case d <= 0:
+		return "0"
+	case d < time.Minute:
+		return d.String()
+	case d%(24*time.Hour) == 0:
+		return fmt.Sprintf("%dd", d/(24*time.Hour))
+	case d%time.Hour == 0:
+		return fmt.Sprintf("%dh", d/time.Hour)
+	default:
+		return fmt.Sprintf("%dm", d/time.Minute)
+	}
 }
 
 // priceDigits returns the quote precision for display, defaulting to 5 for
@@ -662,7 +559,7 @@ func isIndex(symbol string) bool {
 		strings.Contains(symbol, "US100") || strings.Contains(symbol, "NAS")
 }
 
-func findRecentLow(candles []feed.Candle) float64 {
+func findRecentLow(candles []domain.Candle) domain.Price {
 	if len(candles) == 0 {
 		return 0
 	}
@@ -679,7 +576,7 @@ func findRecentLow(candles []feed.Candle) float64 {
 	return low
 }
 
-func findRecentHigh(candles []feed.Candle) float64 {
+func findRecentHigh(candles []domain.Candle) domain.Price {
 	if len(candles) == 0 {
 		return 0
 	}
@@ -713,11 +610,4 @@ func detectSession(t time.Time) string {
 	default:
 		return ""
 	}
-}
-
-func max(a, b uint64) uint64 {
-	if a > b {
-		return a
-	}
-	return b
 }

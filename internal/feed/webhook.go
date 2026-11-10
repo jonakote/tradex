@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"tradex/internal/domain"
+	"tradex/internal/instrument"
 )
 
 // WebhookConfig configures the TradingView webhook receiver.
@@ -81,11 +84,23 @@ func (a WebhookAlert) Validate() error {
 	return nil
 }
 
-// ToCandle converts a candle_close alert to a Candle.
-func (a WebhookAlert) ToCandle() (Candle, error) {
+// ToCandle converts a candle_close alert to a domain.Candle, converting its
+// float OHLC to integer ticks once, here, at the boundary. It fails closed on
+// an unresolved symbol or unknown interval rather than guessing a scale,
+// matching resolve() in source.go.
+func (a WebhookAlert) ToCandle() (domain.Candle, error) {
 	if a.Action != "candle_close" {
-		return Candle{}, errors.New("not a candle_close alert")
+		return domain.Candle{}, errors.New("not a candle_close alert")
 	}
+	spec, ok := instrument.Lookup(a.Symbol)
+	if !ok {
+		return domain.Candle{}, &UnknownInstrumentError{Symbol: a.Symbol}
+	}
+	timeframe := IntervalDuration(a.Interval)
+	if timeframe <= 0 {
+		return domain.Candle{}, fmt.Errorf("feed: webhook unknown interval %q", a.Interval)
+	}
+
 	t := time.Now().UTC()
 	if a.Time != "" {
 		if parsed, err := time.Parse(time.RFC3339, a.Time); err == nil {
@@ -97,18 +112,19 @@ func (a WebhookAlert) ToCandle() (Candle, error) {
 	// TradingView's `time` is the bar's open, so a candle_close alert still
 	// carries the open instant.
 	barOpen, barClose := resolveBarTimes(t, a.Interval)
-	return Candle{
-		Symbol:    a.Symbol,
-		Interval:  a.Interval,
-		Open:      a.Open,
-		High:      a.High,
-		Low:       a.Low,
-		Close:     a.Close,
-		Volume:    a.Volume,
-		Time:      barOpen,
-		OpenTime:  barOpen,
-		CloseTime: barClose,
-	}, nil
+	candle := domain.Candle{
+		Source: "webhook", Symbol: a.Symbol, Timeframe: timeframe,
+		OpenTime: barOpen, CloseTime: barClose,
+		Open:      domain.Price(spec.Ticks(a.Open)),
+		High:      domain.Price(spec.Ticks(a.High)),
+		Low:       domain.Price(spec.Ticks(a.Low)),
+		Close:     domain.Price(spec.Ticks(a.Close)),
+		TickCount: maxUint64(uint64(a.Volume), 1),
+	}
+	if err := candle.Validate(); err != nil {
+		return domain.Candle{}, err
+	}
+	return candle, nil
 }
 
 // WebhookReceiver is an HTTP server that receives TradingView alerts.

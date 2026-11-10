@@ -65,11 +65,39 @@ func TestWebhookAlertToCandle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if candle.Symbol != "GBP/USD" || candle.Close != 1.27100 {
+	// GBP/USD is verified at 5 digits: 1.27100 is 127100 integer ticks.
+	if candle.Symbol != "GBP/USD" || candle.Close != 127100 {
 		t.Fatalf("unexpected candle: %+v", candle)
 	}
-	if candle.Time.Year() != 2026 || candle.Time.Hour() != 14 {
-		t.Fatalf("unexpected time: %v", candle.Time)
+	if candle.OpenTime.Year() != 2026 || candle.OpenTime.Hour() != 14 {
+		t.Fatalf("unexpected time: %v", candle.OpenTime)
+	}
+	if err := candle.Validate(); err != nil {
+		t.Fatalf("produced candle fails domain validation: %v", err)
+	}
+}
+
+// An unverified instrument must fail closed rather than assuming a tick
+// scale, matching resolve() in source.go.
+func TestWebhookAlertToCandleRejectsUnverifiedInstrument(t *testing.T) {
+	alert := WebhookAlert{
+		Symbol: "NOT_A_REAL_SYMBOL", Interval: "1h", Action: "candle_close",
+		Open: 1, High: 1, Low: 1, Close: 1,
+	}
+	if _, err := alert.ToCandle(); err == nil {
+		t.Fatal("an unverified instrument must be rejected, not assumed")
+	}
+}
+
+// An unknown interval must fail closed rather than silently resolving to a
+// zero timeframe.
+func TestWebhookAlertToCandleRejectsUnknownInterval(t *testing.T) {
+	alert := WebhookAlert{
+		Symbol: "GBP/USD", Interval: "nonsense", Action: "candle_close",
+		Open: 1.27000, High: 1.27200, Low: 1.26800, Close: 1.27100,
+	}
+	if _, err := alert.ToCandle(); err == nil {
+		t.Fatal("an unknown interval must be rejected, not guessed")
 	}
 }
 

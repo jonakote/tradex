@@ -726,6 +726,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runSignals(args[1:], stdout, stderr)
 	}
 
+	if len(args) >= 1 && args[0] == "price" {
+		return runPrice(args[1:], stdout, stderr)
+	}
+
+	if len(args) >= 1 && args[0] == "watch" {
+		return runWatch(args[1:], stdout, stderr)
+	}
+
+	if len(args) >= 1 && args[0] == "candles" {
+		return runCandles(args[1:], stdout, stderr)
+	}
+
 	fmt.Fprintln(stderr, "tradex: deterministic trading research")
 	fmt.Fprintln(stderr, "usage:")
 	fmt.Fprintln(stderr, "  tradex version")
@@ -757,6 +769,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stderr, "  tradex walk-forward <study.json> <manifest.json> <audit-dir> <result.json>")
 	fmt.Fprintln(stderr, "  tradex walk-forward-shared <study.json> <manifest.json> <audit-dir> <result.json>")
 	fmt.Fprintln(stderr, "  tradex signals [config.json]")
+	fmt.Fprintln(stderr, "  tradex price [symbol ...]")
+	fmt.Fprintln(stderr, "  tradex watch [--self-test] <config.json>")
+	fmt.Fprintln(stderr, "  tradex candles <symbol> <interval> <from> <to> <out.csv>")
 	return 2
 }
 

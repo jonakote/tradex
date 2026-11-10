@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"tradex/internal/domain"
-	"tradex/internal/features"
 	"tradex/internal/risk"
 )
 
@@ -12,7 +11,7 @@ type OpportunityStatus string
 
 const (
 	OpportunityUnconfirmed    OpportunityStatus = "UNCONFIRMED"
-	OpportunityInvalidated    OpportunityStatus = "INVALIDATED"
+	OpportunityExpired        OpportunityStatus = "EXPIRED"
 	OpportunityRiskRejected   OpportunityStatus = "RISK_REJECTED"
 	OpportunityBrokerRejected OpportunityStatus = "BROKER_REJECTED"
 	OpportunityNoFill         OpportunityStatus = "NO_FILL"
@@ -21,19 +20,25 @@ const (
 	OpportunityClosed         OpportunityStatus = "CLOSED"
 )
 
+// Opportunity explains what happened to every setup the detector flagged,
+// approved or not -- the same funnel purpose the ICC-era Opportunity served,
+// now built from scan lifecycle events (DETECTED/REJECTED/EXPIRED) plus the
+// real orders and fills paper.Broker produced, instead of ICC
+// Indication/Confirmation/SetupCandle transitions.
 type Opportunity struct {
-	ID             string                  `json:"id"`
-	Symbol         string                  `json:"symbol"`
-	Direction      features.BreakDirection `json:"direction"`
-	StartedAt      time.Time               `json:"started_at"`
-	ResolvedAt     time.Time               `json:"resolved_at"`
-	Status         OpportunityStatus       `json:"status"`
-	Reason         string                  `json:"reason,omitempty"`
-	DecisionCode   risk.RejectionCode      `json:"decision_code,omitempty"`
-	IntentID       string                  `json:"intent_id,omitempty"`
-	BrokerOrderID  string                  `json:"broker_order_id,omitempty"`
-	EntryQuantity  int64                   `json:"entry_quantity"`
-	ClosedQuantity int64                   `json:"closed_quantity"`
+	ID             string             `json:"id"`
+	Symbol         string             `json:"symbol"`
+	Strategy       string             `json:"strategy"`
+	Side           string             `json:"side"`
+	StartedAt      time.Time          `json:"started_at"`
+	ResolvedAt     time.Time          `json:"resolved_at"`
+	Status         OpportunityStatus  `json:"status"`
+	Reason         string             `json:"reason,omitempty"`
+	DecisionCode   risk.RejectionCode `json:"decision_code,omitempty"`
+	IntentID       string             `json:"intent_id,omitempty"`
+	BrokerOrderID  string             `json:"broker_order_id,omitempty"`
+	EntryQuantity  int64              `json:"entry_quantity"`
+	ClosedQuantity int64              `json:"closed_quantity"`
 }
 
 type opportunityBuilder struct {

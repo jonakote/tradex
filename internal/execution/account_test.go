@@ -11,7 +11,7 @@ import (
 )
 
 func TestSharedAccountAccumulatesCommonUSDBucketAndVetoesThirdTrade(t *testing.T) {
-	plan, _, base := executionFixture(t)
+	plan, _, base := setupFixture(t)
 	account, err := NewAccount(config.DefaultRisk(), 1000000)
 	if err != nil {
 		t.Fatal(err)
@@ -19,11 +19,11 @@ func TestSharedAccountAccumulatesCommonUSDBucketAndVetoesThirdTrade(t *testing.T
 	eur := accountRequest(base, "EURUSD", "EUR", 1)
 	gbp := accountRequest(base, "GBPUSD", "GBP", 2)
 	aud := accountRequest(base, "AUDUSD", "AUD", 3)
-	_, first, err := account.PrepareICC(plan, eur)
+	_, first, err := account.PrepareSetup(plan, eur)
 	if err != nil || !first.Approved {
 		t.Fatalf("first decision=%+v err=%v", first, err)
 	}
-	_, second, err := account.PrepareICC(plan, gbp)
+	_, second, err := account.PrepareSetup(plan, gbp)
 	if err != nil || !second.Approved {
 		t.Fatalf("second decision=%+v err=%v", second, err)
 	}
@@ -35,7 +35,7 @@ func TestSharedAccountAccumulatesCommonUSDBucketAndVetoesThirdTrade(t *testing.T
 	if view.BucketOpenRiskMinor["USD"] != wantUSD || view.DirectionalRiskMinor["USD"] != -wantUSD {
 		t.Fatalf("common USD exposure not accumulated: %+v", view)
 	}
-	_, third, err := account.PrepareICC(plan, aud)
+	_, third, err := account.PrepareSetup(plan, aud)
 	if err != nil || third.Approved || third.Code != risk.RejectExposureBucket || third.BreachedBucket != "USD" {
 		t.Fatalf("third correlated trade was not vetoed: decision=%+v err=%v", third, err)
 	}
@@ -44,14 +44,14 @@ func TestSharedAccountAccumulatesCommonUSDBucketAndVetoesThirdTrade(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, afterRelease, err := account.PrepareICC(plan, aud)
+	_, afterRelease, err := account.PrepareSetup(plan, aud)
 	if err != nil || !afterRelease.Approved {
 		t.Fatalf("released bucket risk did not restore capacity: decision=%+v err=%v", afterRelease, err)
 	}
 }
 
 func TestSharedAccountSerializesConcurrentCorrelatedApprovals(t *testing.T) {
-	plan, _, base := executionFixture(t)
+	plan, _, base := setupFixture(t)
 	account, err := NewAccount(config.DefaultRisk(), 1000000)
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestSharedAccountSerializesConcurrentCorrelatedApprovals(t *testing.T) {
 		go func(index int, currency string) {
 			defer wait.Done()
 			request := accountRequest(base, currency+"USD", currency, index+1)
-			_, decision, err := account.PrepareICC(plan, request)
+			_, decision, err := account.PrepareSetup(plan, request)
 			decisions <- decision
 			errors <- err
 		}(index, currency)
@@ -91,11 +91,12 @@ func TestSharedAccountSerializesConcurrentCorrelatedApprovals(t *testing.T) {
 	}
 }
 
-func accountRequest(base ICCRequest, symbol, baseCurrency string, sequence int) ICCRequest {
+func accountRequest(base SetupRequest, symbol, baseCurrency string, sequence int) SetupRequest {
 	request := base
-	request.IntentID = fmt.Sprintf("icc-%d", sequence)
-	request.ApprovalID = fmt.Sprintf("risk-icc-%d", sequence)
-	request.Signal.Symbol = symbol
+	request.IntentID = fmt.Sprintf("setup-%d", sequence)
+	request.ApprovalID = fmt.Sprintf("risk-setup-%d", sequence)
+	request.Symbol = symbol
+	request.Setup.DetectedAt = base.Setup.DetectedAt
 	request.Market.Instrument.Symbol = symbol
 	request.Market.Instrument.BaseCurrency = baseCurrency
 	request.Market.Instrument.QuoteCurrency = "USD"

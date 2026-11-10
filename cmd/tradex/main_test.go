@@ -23,7 +23,7 @@ func TestReplayCommandWritesResultAndAudit(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	auditPath := filepath.Join(t.TempDir(), "audit.jsonl")
 	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
-	scenarioPath := filepath.Join("..", "..", "internal", "research", "replay", "testdata", "eurusd_icc_win.json")
+	scenarioPath := filepath.Join("..", "..", "internal", "research", "replay", "testdata", "eurusd_continuation_win.json")
 	if code := run([]string{"manifest", scenarioPath, manifestPath}, &stdout, &stderr); code != 0 {
 		t.Fatalf("manifest code=%d stderr=%s", code, stderr.String())
 	}
@@ -36,11 +36,11 @@ func TestReplayCommandWritesResultAndAudit(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Scenario != "eurusd-london-icc-win" || result.Report.NetProfitMinor != 4620 {
+	if result.Scenario != "eurusd-continuation-win" || result.Report.NetProfitMinor != 9102 {
 		t.Fatalf("unexpected command result: %+v", result)
 	}
 	events, err := journal.ReadAll(auditPath)
-	if err != nil || len(events) != 11 || events[0].Kind != "EXPERIMENT_MANIFEST" {
+	if err != nil || len(events) != 19 || events[0].Kind != "EXPERIMENT_MANIFEST" {
 		t.Fatalf("audit events=%d err=%v", len(events), err)
 	}
 }
@@ -51,7 +51,7 @@ func TestReportCommandWritesVerifiedJSONAndMarkdown(t *testing.T) {
 	resultPath := filepath.Join(directory, "result.json")
 	reportPath := filepath.Join(directory, "report.json")
 	markdownPath := filepath.Join(directory, "report.md")
-	scenarioPath := filepath.Join("..", "..", "internal", "research", "replay", "testdata", "eurusd_icc_win.json")
+	scenarioPath := filepath.Join("..", "..", "internal", "research", "replay", "testdata", "eurusd_continuation_win.json")
 	scenario, err := replay.Load(scenarioPath)
 	if err != nil {
 		t.Fatal(err)
@@ -93,12 +93,12 @@ func TestReportCommandWritesVerifiedJSONAndMarkdown(t *testing.T) {
 }
 
 func TestSharedReplayCommandsWriteResultAndAudit(t *testing.T) {
-	fixturePath := filepath.Join("..", "..", "internal", "research", "replay", "testdata", "eurusd_icc_win.json")
+	fixturePath := filepath.Join("..", "..", "internal", "research", "replay", "testdata", "eurusd_continuation_win.json")
 	base, err := replay.Load(fixturePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	base.Events = base.Events[:5]
+	base.Events = base.Events[:7]
 	eurusd := commandSharedLeg(base, "EURUSD", "EUR")
 	gbpusd := commandSharedLeg(base, "GBPUSD", "GBP")
 	shared := replay.SharedScenario{
@@ -340,7 +340,7 @@ func TestCTraderOAuthURLCommandUsesEnvironment(t *testing.T) {
 }
 
 func TestWalkForwardCommandsFreezeAndRunStudy(t *testing.T) {
-	fixturePath := filepath.Join("..", "..", "internal", "research", "replay", "testdata", "eurusd_icc_win.json")
+	fixturePath := filepath.Join("..", "..", "internal", "research", "replay", "testdata", "eurusd_continuation_win.json")
 	base, err := replay.Load(fixturePath)
 	if err != nil {
 		t.Fatal(err)
@@ -355,7 +355,7 @@ func TestWalkForwardCommandsFreezeAndRunStudy(t *testing.T) {
 	study := evaluation.Study{
 		Name: "cli-walk-forward",
 		Config: evaluation.Config{
-			InitialTrainCycles: 2, TestCycles: 1, StepCycles: 1, HoldoutCycles: 1,
+			InitialTrainCycles: 8, TestCycles: 8, StepCycles: 8, HoldoutCycles: 8,
 			MinTrainingTrades: 1, SelectionMetric: evaluation.SelectionScore,
 		},
 		Candidates: []evaluation.Candidate{{ID: "b", Scenario: second}, {ID: "a", Scenario: first}},
@@ -399,7 +399,7 @@ func TestWalkForwardCommandsFreezeAndRunStudy(t *testing.T) {
 }
 
 func TestRobustnessCommandWritesVerifiedResult(t *testing.T) {
-	fixturePath := filepath.Join("..", "..", "internal", "research", "replay", "testdata", "eurusd_icc_win.json")
+	fixturePath := filepath.Join("..", "..", "internal", "research", "replay", "testdata", "eurusd_continuation_win.json")
 	scenario, err := replay.Load(fixturePath)
 	if err != nil {
 		t.Fatal(err)
