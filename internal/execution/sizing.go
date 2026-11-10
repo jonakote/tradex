@@ -47,6 +47,11 @@ var MeasuredIBSStats = map[string]IBSStats{
 	"EURUSD": {WinRate: 0.564, AvgWinBps: 35.13, AvgLossBps: 31.86, Robust: true},
 	"US100":  {WinRate: 0.668, AvgWinBps: 79.28, AvgLossBps: 90.88, Robust: true},
 	"XAGUSD": {WinRate: 0.553, AvgWinBps: 165.54, AvgLossBps: 170.12, Robust: false},
+	// NATGAS: 185 trades (84/101 split), both halves positive and close
+	// to each other (+9.31bp / +9.14bp) -- a fourth confirming instrument,
+	// a commodity outside the FX/metals/equity-index families already
+	// tried. See docs/MEANREVERSION_SPEC.md.
+	"NATGAS": {WinRate: 0.551, AvgWinBps: 297.97, AvgLossBps: 320.29, Robust: true},
 }
 
 const (

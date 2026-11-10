@@ -150,7 +150,7 @@ var registry = func() map[string]Spec {
 	// precision must be confirmed before any tick-denominated strategy
 	// parameter is trusted on them. They are outside the current research
 	// universe of FX majors plus XAU/XAG.
-	for _, symbol := range []string{"BRENT", "WTI", "USOIL", "UKOIL", "XTIUSD", "XBRUSD"} {
+	for _, symbol := range []string{"USOIL", "UKOIL", "XTIUSD", "XBRUSD"} {
 		specs = append(specs, Spec{Symbol: symbol, Class: ClassEnergy,
 			Digits: 2, PriceScale: scaleFor(2), PipSize: 1, Unverified: true})
 	}
@@ -173,6 +173,16 @@ var registry = func() map[string]Spec {
 		specs = append(specs, Spec{Symbol: symbol, Class: ClassIndex,
 			Digits: 1, PriceScale: scaleFor(1), PipSize: 1})
 	}
+	// Commodities beyond gold/silver: verified against GET /api/v1/markets
+	// on 2026-11-10 (tickSize noted per symbol) -- none match the 2-digit
+	// guess the Unverified energy block above still carries for the
+	// untouched aliases (USOIL/UKOIL/XTIUSD/XBRUSD).
+	specs = append(specs,
+		Spec{Symbol: "WTI", Class: ClassEnergy, Digits: 3, PriceScale: scaleFor(3), PipSize: 1},
+		Spec{Symbol: "BRENT", Class: ClassEnergy, Digits: 3, PriceScale: scaleFor(3), PipSize: 1},
+		Spec{Symbol: "NATGAS", Class: ClassEnergy, Digits: 4, PriceScale: scaleFor(4), PipSize: 1},
+		Spec{Symbol: "COPPER", Class: ClassMetal, Digits: 5, PriceScale: scaleFor(5), PipSize: 1},
+	)
 
 	table := make(map[string]Spec, len(specs))
 	for _, spec := range specs {

@@ -47,6 +47,14 @@ var capitalEpics = map[string]string{
 	"J225":  "J225",  // Japan 225 (Nikkei)
 	"FR40":  "FR40",  // France 40 (CAC 40)
 	"UK100": "UK100", // UK 100 (FTSE 100)
+
+	// Commodities beyond gold/silver. Verified present and TRADEABLE via
+	// GET /api/v1/markets?searchTerm=... on 2026-11-10 (tickSize as noted
+	// — none of these match the old carried-over 2-digit energy guess).
+	"WTI":     "OIL_CRUDE",  // tickSize 0.001 -> 3 digits
+	"BRENT":   "OIL_BRENT",  // tickSize 0.001 -> 3 digits
+	"NATGAS":  "NATURALGAS", // tickSize 0.0001 -> 4 digits
+	"COPPER":  "COPPER",     // tickSize 0.00001 -> 5 digits
 }
 
 // CapitalEpic returns the Capital.com epic for a symbol in any spelling. It

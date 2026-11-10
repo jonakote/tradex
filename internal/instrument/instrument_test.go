@@ -128,7 +128,7 @@ func TestLookupFailsClosedOnUnknownInstruments(t *testing.T) {
 // Instruments carried over from prior convention are flagged so they cannot
 // be mistaken for venue-verified precision.
 func TestCarriedOverInstrumentsAreMarkedUnverified(t *testing.T) {
-	for _, symbol := range []string{"BRENT", "NQ", "SPX500"} {
+	for _, symbol := range []string{"USOIL", "NQ", "SPX500"} {
 		spec, ok := Lookup(symbol)
 		if !ok {
 			t.Fatalf("%s must remain resolvable for backwards compatibility", symbol)

@@ -254,6 +254,44 @@ hit the 2% ceiling — a reminder that literal Kelly off a ~150-200 trade
 sample routinely overstates what's sane to risk, which is exactly why the
 ceiling exists rather than trusting the formula on its own.
 
+## Breadth search, round 3 — crypto, commodities, more FX crosses
+
+Continued the breadth search with the three asset classes not yet tried.
+
+- **Crypto (BTCUSDT, ETHUSDT, ~7.8y Binance daily)**: matches the original
+  v0.1 finding exactly, now re-measured with the real avg-win/avg-loss
+  numbers — BTCUSDT wrong-signed (edge −25.82bp), ETHUSDT halves disagree
+  (+47.74bp / −31.06bp). No change.
+- **Commodities beyond gold/silver**: verified real Capital.com epics
+  (`OIL_CRUDE`, `OIL_BRENT`, `NATURALGAS`, `COPPER` — none matched the old
+  2-digit "Unverified" energy guess; corrected precision to 3/3/4/5 digits
+  respectively). 6-year sample:
+
+  | Instrument | Trades | Full edge | First half | Second half | Verdict |
+  |---|---|---|---|---|---|
+  | WTI | 124 | −11.13bp | +23.57bp | **−50.60bp** | not robust |
+  | BRENT | 115 | +42.37bp | +126.61bp | **−43.33bp** | not robust |
+  | **NATGAS** | **185** | **+9.22bp** | **+9.31bp** | **+9.14bp** | **confirms — both halves close and positive** |
+  | COPPER | 188 | +15.03bp | **−6.32bp** | +26.32bp | not robust |
+
+  **NATGAS is a fourth confirming instrument** — a commodity outside every
+  family tried so far (FX, metals, US equity index), with the most
+  internally consistent halves of anything measured in this document
+  (+9.31 / +9.14bp — nearly identical, not just both-positive). Added to
+  the live daily IBS forward test and the sizing table.
+
+- **More FX crosses (EURGBP, EURJPY, GBPJPY, AUDJPY, NZDUSD, USDCHF, 2y)**:
+  all have too few trades (16-34 total, well under the ≥30-per-HALF floor)
+  to say anything. Several look exciting full-sample (AUDJPY +11.08bp,
+  USDCHF +7.29bp) but with 7-16 trades per half that is noise, not
+  evidence — not pursued further; would need several more years of data
+  before these crosses are even measurable, let alone confirmed.
+
+Updated live config: `["XAGUSD", "EURUSD", "US100", "NATGAS"]`, still all
+labelled UNVALIDATED pending one more instrument confirmation outside
+these four families (FX, metals, US equity index, energy) before
+`Validated()` is considered.
+
 ## Intraday IBS (1h / 15m) — tested, not confirmed
 
 The literature's IBS effect is documented on DAILY bars only; it was worth

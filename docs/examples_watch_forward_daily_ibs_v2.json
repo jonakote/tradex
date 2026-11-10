@@ -1,6 +1,6 @@
 {
   "capital": {
-    "symbols": ["XAGUSD", "EURUSD", "US100"],
+    "symbols": ["XAGUSD", "EURUSD", "US100", "NATGAS"],
     "interval": "1d"
   },
   "strategies": ["ibs"],
