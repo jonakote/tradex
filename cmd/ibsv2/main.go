@@ -131,6 +131,7 @@ func main() {
 		}
 		var sumRet int64
 		var sumDrift float64
+		var sumWin, sumLoss int64
 		wins, strengthExits := 0, 0
 		var sumHold int
 		for _, t := range ts {
@@ -139,6 +140,9 @@ func main() {
 			sumHold += t.holdBars
 			if t.retBps > 0 {
 				wins++
+				sumWin += t.retBps
+			} else if t.retBps < 0 {
+				sumLoss += -t.retBps
 			}
 			if t.exitKind == "STRENGTH" {
 				strengthExits++
@@ -147,8 +151,16 @@ func main() {
 		n := float64(len(ts))
 		meanDriftBps := sumDrift / n
 		edge := float64(sumRet)/n - meanDriftBps
-		fmt.Printf("%-14s %4d trades  mean_ret %+7.2fbp  drift %+7.2fbp  edge %+7.2fbp  win%% %5.1f%%  avg_hold %.1fbars  strength_exit%% %.1f%%\n",
-			label, len(ts), float64(sumRet)/n, meanDriftBps, edge, 100*float64(wins)/n, float64(sumHold)/n, 100*float64(strengthExits)/n)
+		losses := len(ts) - wins
+		avgWin, avgLoss := 0.0, 0.0
+		if wins > 0 {
+			avgWin = float64(sumWin) / float64(wins)
+		}
+		if losses > 0 {
+			avgLoss = float64(sumLoss) / float64(losses)
+		}
+		fmt.Printf("%-14s %4d trades  mean_ret %+7.2fbp  drift %+7.2fbp  edge %+7.2fbp  win%% %5.1f%%  avg_hold %.1fbars  strength_exit%% %.1f%%  avg_win %+6.2fbp  avg_loss %6.2fbp\n",
+			label, len(ts), float64(sumRet)/n, meanDriftBps, edge, 100*float64(wins)/n, float64(sumHold)/n, 100*float64(strengthExits)/n, avgWin, avgLoss)
 	}
 
 	var pre, post []trade

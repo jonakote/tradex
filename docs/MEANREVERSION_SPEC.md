@@ -179,6 +179,81 @@ equity indices) would still be the stronger bar to clear before flipping
 still labelled UNVALIDATED, now collecting real forward data on 3
 confirmed instruments instead of 2.
 
+## Breadth search, round 2 — non-US indices and more FX crosses: nothing new
+
+Tried to widen the confirmed set further, same locked v0.2 config, same
+discipline:
+
+- **GBPUSD, AUDUSD, USDCAD, USDJPY** (2y daily, same threshold): all
+  negative full-sample edge (−2.35 to −12.35bp). No new FX confirmations.
+- **DE40 (DAX), J225 (Nikkei), FR40 (CAC40), UK100 (FTSE)** — verified
+  real Capital.com epics (same `GET /api/v1/markets` check, tickSize 0.1),
+  6-year sample: DE40 outright negative; J225/FR40/UK100 all show the
+  identical halves-flip pattern as US500/US30 (negative first half,
+  positive second) — not robust. The "equity index" asset class edge does
+  NOT generalize beyond US100 specifically.
+
+## Important correction — XAGUSD's confirmation does not survive a harder retest
+
+Re-tested XAGUSD on a uniform 6-year window (2020-11 to 2026-11, split at
+the midpoint, same as every other instrument in this document) instead of
+whatever window/split produced the original "genuine fresh holdout"
+result above. Result: full-sample edge is still positive (+4.24bp,
+152 trades), but **the first half is strongly negative (−35.72bp, 59
+trades)** — it does not clear the both-halves bar on this window. This
+contradicts the earlier claimed confirmation and must be stated plainly
+rather than quietly kept: XAGUSD's result is split-point-sensitive, the
+same fragility every other "lead" in this project has shown. It stays in
+the live forward test (more real data is the only way to settle this), but
+is NOT treated as equally confirmed to EURUSD/US100 going forward — see
+`internal/execution/sizing.go`, where it is explicitly flagged
+`Robust: false` and sized down accordingly.
+
+## Threshold widening (more frequent signals) — tested, dilutes the edge
+
+Asked whether loosening the IBS trigger (30%/70% instead of 20%/80%, i.e.
+acting on more "near-extreme" readings) gets more trades without losing
+the edge, same 6-year windows:
+
+| Instrument | Config | Trades | Full edge | First half | Second half |
+|---|---|---|---|---|---|
+| EURUSD | 20/80 (baseline) | 149 | +6.32bp | +7.58bp | +5.60bp |
+| EURUSD | 30/70 (widened) | 231 | +2.67bp | +1.76bp | +3.08bp |
+| US100 | 20/80 (baseline) | 205 | +14.34bp | +15.95bp | +13.37bp |
+| US100 | 30/70 (widened) | 326 | +3.01bp | **+0.85bp** | +4.24bp |
+| XAGUSD | 20/80 (baseline) | 152 | +4.24bp | −35.72bp | +29.60bp |
+| XAGUSD | 30/70 (widened) | 249 | −4.26bp | −35.35bp | +13.64bp |
+
+**More trades, but every instrument's edge shrinks, and US100's first half
+nearly vanishes (+0.85bp — noise).** This is exactly the expected
+mean-reversion tradeoff (a more extreme IBS reading is a stronger signal;
+a near-average one is weaker), not a surprise, but it means the threshold
+is NOT a free lever for frequency — not deployed. The live config stays at
+the tight 20%/80% threshold.
+
+## Realistic trade frequency on what is actually confirmed
+
+EURUSD: 149 trades / 6y ≈ 25/yr ≈ 1 every 2 weeks. US100: 205/6y ≈ 34/yr ≈
+1 every 1.5 weeks. XAGUSD: unstable, don't count on it. Combined across
+all 3 (independent fire conditions, so roughly additive): realistically
+**1-3 signals a week**, not multiple a day — this is a mean-reversion
+signal on daily bars; it fires when a bar closes at an extreme, which by
+definition does not happen every day. There is no version of this specific
+edge that fires more often without diluting itself, per the threshold test
+above.
+
+## Position sizing (`internal/execution/sizing.go`)
+
+Every daily IBS signal now carries a `suggested_risk_pct` (also shown in
+the delivered text as "risk X% of equity"), computed per-instrument from
+real `ibsv2` win-rate/avg-win/avg-loss stats via half-Kelly, hard-capped
+at 2% of equity, and discounted to 25% of that for any instrument whose
+backtest halves disagree (currently just XAGUSD, per the correction
+above). EURUSD and US100's raw half-Kelly outputs (8.4% and 14.4%) both
+hit the 2% ceiling — a reminder that literal Kelly off a ~150-200 trade
+sample routinely overstates what's sane to risk, which is exactly why the
+ceiling exists rather than trusting the formula on its own.
+
 ## Intraday IBS (1h / 15m) — tested, not confirmed
 
 The literature's IBS effect is documented on DAILY bars only; it was worth

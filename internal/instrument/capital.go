@@ -40,6 +40,13 @@ var capitalEpics = map[string]string{
 	"US500": "US500", // S&P 500
 	"US100": "US100", // Nasdaq 100 ("US Tech 100")
 	"US30":  "US30",  // Dow ("US Wall Street 30")
+
+	// Non-US global equity indices. Verified present and TRADEABLE via the
+	// same GET /api/v1/markets search on 2026-11-10, same tickSize 0.1.
+	"DE40":  "DE40",  // Germany 40 (DAX)
+	"J225":  "J225",  // Japan 225 (Nikkei)
+	"FR40":  "FR40",  // France 40 (CAC 40)
+	"UK100": "UK100", // UK 100 (FTSE 100)
 }
 
 // CapitalEpic returns the Capital.com epic for a symbol in any spelling. It

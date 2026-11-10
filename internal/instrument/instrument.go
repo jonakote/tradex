@@ -168,6 +168,11 @@ var registry = func() map[string]Spec {
 		specs = append(specs, Spec{Symbol: symbol, Class: ClassIndex,
 			Digits: 1, PriceScale: scaleFor(1), PipSize: 1})
 	}
+	// Non-US global indices: same verification (tickSize 0.1) on 2026-11-10.
+	for _, symbol := range []string{"DE40", "J225", "FR40", "UK100"} {
+		specs = append(specs, Spec{Symbol: symbol, Class: ClassIndex,
+			Digits: 1, PriceScale: scaleFor(1), PipSize: 1})
+	}
 
 	table := make(map[string]Spec, len(specs))
 	for _, spec := range specs {

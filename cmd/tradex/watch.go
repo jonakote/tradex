@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"tradex/internal/domain"
+	"tradex/internal/execution"
 	"tradex/internal/features"
 	"tradex/internal/feed"
 	"tradex/internal/instrument"
@@ -416,6 +417,9 @@ func buildStrategySignal(det scan.Detector, setup scan.Setup, spec instrument.Sp
 		DetectedAt:  setup.DetectedAt,
 		EmittedAt:   emittedAt,
 		Diagnostics: setup.Diagnostics,
+	}
+	if riskPct, ok := execution.HalfKellyRiskPct(spec.Symbol); ok {
+		sig.SuggestedRiskPct = strconv.FormatFloat(riskPct, 'f', 2, 64)
 	}
 	if setup.StopTarget() {
 		sig.RiskPips = pips(setup.RiskTicks)
