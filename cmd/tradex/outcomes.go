@@ -461,12 +461,13 @@ func resolveSignal(r journalRecord, candles []domain.Candle, spec instrument.Spe
 }
 
 func pipDivisor(spec instrument.Spec) float64 {
-	// Pip = 10 ticks for 5-digit FX quotes, 1 tick otherwise (metals/JPY
-	// pairs/crypto quoted already at pip precision in this codebase).
-	if spec.Digits == 5 {
-		return 10
+	// A pip is PipSize price units; TickSize is 1/PriceScale price units
+	// per tick, so a pip is PipSize*PriceScale ticks. Instruments with no
+	// pip convention (PipSize == 0, e.g. crypto) fall back to 1 tick.
+	if !spec.HasPipConvention() {
+		return 1
 	}
-	return 1
+	return spec.PipSize * float64(spec.PriceScale)
 }
 
 func riskMultiple(entry, stop, target float64, side string, at float64) float64 {
