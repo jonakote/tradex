@@ -199,6 +199,24 @@ var registry = func() map[string]Spec {
 
 // Lookup resolves any feed spelling to a verified spec. It returns false for
 // an unverified instrument; callers must fail closed rather than assume.
+// MinDealSize returns the broker's minimum order size for symbol, verified
+// live via GET /api/v1/markets/{epic} on 2026-11-11, for exactly the
+// instruments internal/execution has a measured size entry for. An
+// instrument absent here returns (0, false) — callers must not guess.
+func MinDealSize(symbol string) float64 {
+	switch symbol {
+	case "US100":
+		return 0.001
+	case "PLATINUM":
+		return 0.01
+	case "EURUSD":
+		return 100 // Capital.com FX sizing: value in the market's own POINTS unit
+	case "NATGAS":
+		return 10
+	}
+	return 0
+}
+
 func Lookup(symbol string) (Spec, bool) {
 	spec, ok := registry[Normalize(symbol)]
 	return spec, ok

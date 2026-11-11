@@ -734,6 +734,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runWatch(args[1:], stdout, stderr)
 	}
 
+	if len(args) >= 1 && args[0] == "execute" {
+		return runExecute(args[1:], stdout, stderr)
+	}
+
 	if len(args) >= 1 && args[0] == "candles" {
 		return runCandles(args[1:], stdout, stderr)
 	}

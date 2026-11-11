@@ -409,3 +409,69 @@ second half carries the edge. Same pattern as every other "confirms on one
 cut of the data" result in this project: not promotable. The daily
 timeframe remains the only one with a measured, if still narrow (2/5
 instruments), IBS edge.
+
+## First real demo execution (2026-11-11)
+
+Built `tradex execute` — the first code in this project with order
+authority at all. `internal/feed` stays read-only (unchanged, still
+guarded by its own test); a brand new `internal/broker` package is the
+only thing allowed to place or close a position, and it hard-refuses to
+construct unless the configured base URL contains "demo" — not a config
+flag, a code-level refusal.
+
+**Risk controls** (`internal/execution/risk.go`), all hard gates, not
+advisory:
+- Per-trade risk: existing half-Kelly sizing, capped at 2% of equity.
+- Max 4 open positions at once, max 25% of equity committed as margin.
+- Soft daily loss cap (5% of equity): blocks new entries for the rest of
+  the UTC day, persisted across restarts so a crash/restart can't reset
+  the counter to zero.
+- Hard daily loss cap (9%): force-closes every open position immediately,
+  in addition to blocking entries.
+- Manual kill switch: presence of `data/KILL_SWITCH` blocks all new
+  entries, independent of everything else working correctly.
+- A second, independent notional backstop (never >15% of equity in one
+  trade) in case the margin-factor math itself has a unit error.
+- Every protective stop is MANDATORY and broker-side — `PlaceOrder`
+  refuses to submit without one. This is NOT the backtested exit rule
+  (IBS has no price stop at all, by design, only time/condition exits) —
+  it's a safety floor added specifically for real orders, sized at 3x the
+  instrument's measured average loss so it essentially never fires under
+  normal conditions.
+
+**A real bug caught during verification, not a hypothetical one**:
+Capital.com's `/api/v1/confirms/{dealReference}` endpoint returned a
+`dealId` that did NOT match the actual open position's `dealId` — closing
+by that ID would have silently failed to find the position, every time.
+Caught by placing one real $111-notional EURUSD demo order, confirming it
+in `/api/v1/positions`, and discovering the IDs didn't match. Fixed by
+having `PlaceOrder` look the real position up by epic/direction/size
+match instead of trusting the confirm's own field. Re-verified end to end:
+placed, confirmed open with the correct ID and stop level, closed,
+confirmed gone. Deleted the one-off manual test afterward; the fix and a
+permanent demo-URL-refusal test are what's committed.
+
+**Live now, both switched from `watch` to `execute`** (places real demo
+orders in addition to the same Telegram/journal delivery `watch` always
+did): `docs/examples_watch_forward_daily_ibs_v2.json` (US100, PLATINUM,
+both sides) and `docs/examples_watch_forward_daily_ibs_longonly_v2.json`
+(EURUSD, NATGAS, long only). Only symbols present in
+`execution.MeasuredIBSStats` are ever traded — an unmeasured symbol in a
+config gets no order, by construction.
+
+**Known limitations, stated plainly:**
+- Margin-factor and min-deal-size values are hardcoded from one live API
+  check (2026-11-11) for exactly these 4 instruments — not re-verified
+  periodically, could drift if Capital.com changes contract terms.
+- `EURUSD`'s min deal size unit semantics (`POINTS`, value 100) are not
+  fully understood — the notional backstop exists specifically to catch a
+  misunderstanding here before it becomes an oversized order.
+- There is a pre-existing, more mature broker abstraction
+  (`internal/broker/ctrader`, `internal/broker/paper` — a different
+  broker, with its own circuit breaker/safety-gate/idempotency machinery)
+  already in this codebase, apparently from earlier unrelated work. Not
+  consolidated with this new Capital.com client — worth doing later, not
+  done now.
+- This is demo money. Nothing here has been asked to run on a live
+  account, and `internal/broker` cannot be pointed at one without a
+  deliberate code change.
