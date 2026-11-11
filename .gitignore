@@ -19,6 +19,7 @@ coverage.out
 /data/demo_open_trades.json
 /data/risk_state.json
 /data/KILL_SWITCH
+/data/demo_execute.lock
 
 # Local configuration and secrets
 .env
