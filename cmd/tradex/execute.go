@@ -194,6 +194,7 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 	}
 
 	openTradesPath := "data/demo_open_trades.json"
+	lockPath := "data/demo_execute.lock"
 	risk, err := execution.NewRiskManager(execution.DefaultRiskConfig())
 	if err != nil {
 		fmt.Fprintf(stderr, "tradex execute: risk manager: %v\n", err)
@@ -237,7 +238,64 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 	}
 
 	scanOnce := func() {
+		lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+		if err != nil {
+			fmt.Fprintf(stderr, "tradex execute: lock: %v\n", err)
+			return
+		}
+		defer lockFile.Close()
+		// Two `execute` processes (one per config) share the SAME state
+		// files on purpose, so risk limits are enforced across the whole
+		// account, not per-process. That means their read-modify-write of
+		// those files must be serialized, or one process's save can
+		// silently erase the other's just-written position. This lock is
+		// the fix for exactly that race.
+		if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+			fmt.Fprintf(stderr, "tradex execute: flock: %v\n", err)
+			return
+		}
+		defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+
 		trades := loadOpenTrades(openTradesPath)
+
+		// Reconcile against the broker's actual open positions before
+		// doing anything else. If a position exists on Capital.com for one
+		// of our symbols that this process's local state doesn't know
+		// about (e.g. a crash between PlaceOrder succeeding and
+		// saveOpenTrades running), ADOPT it into local state rather than
+		// risk placing a second, duplicate order for the same symbol.
+		if positions, err := bro.OpenPositions(); err == nil {
+			byEpic := map[string]broker.Position{}
+			for _, p := range positions {
+				byEpic[p.Epic] = p
+			}
+			for symbol := range marginFactorPct {
+				if _, tracked := trades.Trades[symbol]; tracked {
+					continue
+				}
+				epic, _ := instrument.CapitalEpic(symbol)
+				if epic == "" {
+					epic = symbol
+				}
+				p, found := byEpic[epic]
+				if !found {
+					continue
+				}
+				fmt.Fprintf(stderr, "%s [execute:%s] RECONCILED an untracked open broker position (dealId=%s) — adopting it instead of risking a duplicate order\n",
+					time.Now().UTC().Format(time.RFC3339), symbol, p.DealID)
+				side := "buy"
+				if p.Direction == "SELL" {
+					side = "sell"
+				}
+				marginFactor := marginFactorPct[symbol]
+				trades.Trades[symbol] = openTrade{
+					Symbol: symbol, DealID: p.DealID, Side: side, EntryPrice: p.Level, Size: p.Size,
+					MarginPct: p.Size * p.Level * marginFactor / 100, // equity unknown here; recomputed next loop anyway
+					MaxHoldBars: 10, LastBarSeen: time.Now().UTC(), OpenedAt: time.Now().UTC(),
+				}
+			}
+			saveOpenTrades(openTradesPath, trades)
+		}
 
 		// Daily hard-loss flatten check, before anything else.
 		if acct, err := bro.AccountSummary(); err == nil && risk.ShouldFlattenEverything(acct.Balance) {
