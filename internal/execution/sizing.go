@@ -6,7 +6,7 @@
 // Half-Kelly (f*/2, where f* = p - (1-p)/b) is the standard conservative
 // fractional-Kelly used when the win-rate/payoff estimate comes from a
 // finite historical sample rather than a known distribution — full Kelly
-// is already too aggressive for a true edge; on ~150-200 trades of
+// is already too aggressive for a true edge; on ~150-300 trades of
 // estimation noise, using the full formula output would be reckless.
 //
 // Two additional safeguards on top of half-Kelly, because a Kelly formula
@@ -19,55 +19,69 @@
 package execution
 
 // IBSStats are the measured win rate and average win/loss (in bps of
-// price, net of cost) for one instrument's IBS v0.2 signal, from
-// `cmd/ibsv2` on the full available sample. Robust records whether BOTH
-// backtest halves independently confirmed positive edge — see
-// docs/MEANREVERSION_SPEC.md for the exact numbers and dates measured.
+// price, net of transaction cost AND real overnight financing/swap) for
+// one instrument's IBS v0.2 signal, from `cmd/ibsv2` on the full available
+// sample. Robust records whether BOTH backtest halves independently
+// confirmed positive edge — see docs/MEANREVERSION_SPEC.md for the exact
+// numbers and dates measured.
+//
+// Side records which side(s) of the IBS signal these stats (and the
+// corresponding live config) cover. `ibsv2` only ever measured the LONG
+// side until 2026-11-10 — the live scan.IBS detector fires both sides, so
+// an instrument's short-side signals were running un-measured. Fixed:
+// every entry below now matches exactly what its live watch config emits
+// (see docs/examples_watch_forward_daily_ibs_v2.json for "both" symbols,
+// docs/examples_watch_forward_daily_ibs_longonly_v2.json for "long" ones).
 type IBSStats struct {
 	WinRate    float64 // 0..1
 	AvgWinBps  float64
 	AvgLossBps float64
 	Robust     bool
+	Side       string // "long" or "both" -- must match the live config
 }
 
 // MeasuredIBSStats holds every instrument with a real `ibsv2` measurement
-// on file. An instrument absent here has no suggested size — callers must
-// not default to a guess.
+// on file, net of real per-side overnight swap rates pulled from Capital.com
+// on 2026-11-10 (GET /api/v1/markets/{epic}). An instrument absent here has
+// no suggested size — callers must not default to a guess.
 //
 // Source (6-year sample, split 2023-11-10, ibs_long_below=2000bps,
-// ibs_exit_above=5000bps, max_hold=10, measured 2026-11-10):
-//   - EURUSD: 149 trades, win 56.4%, both halves positive (+7.58/+5.60bp).
-//   - US100:  205 trades, win 66.8%, both halves positive (+15.95/+13.37bp).
-//   - XAGUSD: 152 trades, win 55.3%, full-sample edge positive but the
-//     first half is STRONGLY negative (-35.72bp) on this exact window —
-//     contradicts the earlier "confirmed" read from a different window/
-//     split point (see MEANREVERSION_SPEC.md's "split-sensitivity" note).
-//     Kept in the live forward test for more data, but sized down hard.
+// ibs_short_above=8000bps, ibs_exit=5000bps, max_hold=10):
+//   - US100 (both sides, swap long +2.221bp/day short +0.002bp/day): 316
+//     trades, win 66.1%, both halves positive (+31.09/+12.63bp).
+//   - PLATINUM (both sides, swap long +1.363bp/day short -0.541bp/day):
+//     275 trades, win 63.3%, both halves positive (+9.35/+50.10bp).
+//   - EURUSD (LONG ONLY — short side measured negative/not robust, swap
+//     long +1.584bp/day): 149 trades, win 53.7%, both halves positive
+//     (+4.03/+2.35bp) even after real swap cost.
+//   - NATGAS (LONG ONLY — short side measured not robust, swap long
+//     +1.096bp/day): 185 trades, win 55.1%, both halves positive
+//     (+7.54/+7.13bp) even after real swap cost.
+//
+// XAGUSD is deliberately absent: already flagged not-robust on a uniform
+// 6-year retest, and with real swap cost added (long +3.799bp/day) the
+// full-sample edge flips negative (-2.50bp) with halves still disagreeing
+// (-43.76/+23.67bp). Removed from both live configs and from this table —
+// three independent checks now say no, not one.
 var MeasuredIBSStats = map[string]IBSStats{
-	"EURUSD": {WinRate: 0.564, AvgWinBps: 35.13, AvgLossBps: 31.86, Robust: true},
-	"US100":  {WinRate: 0.668, AvgWinBps: 79.28, AvgLossBps: 90.88, Robust: true},
-	"XAGUSD": {WinRate: 0.553, AvgWinBps: 165.54, AvgLossBps: 170.12, Robust: false},
-	// NATGAS: 185 trades (84/101 split), both halves positive and close
-	// to each other (+9.31bp / +9.14bp) -- a fourth confirming instrument,
-	// a commodity outside the FX/metals/equity-index families already
-	// tried. See docs/MEANREVERSION_SPEC.md.
-	"NATGAS": {WinRate: 0.551, AvgWinBps: 297.97, AvgLossBps: 320.29, Robust: true},
-	// PLATINUM: 128 trades (40/88 split, pre-split just over the 30-trade
-	// floor), both halves positive (+22.22bp / +74.72bp) -- a fifth
-	// confirming instrument. See docs/MEANREVERSION_SPEC.md.
-	"PLATINUM": {WinRate: 0.656, AvgWinBps: 165.33, AvgLossBps: 121.20, Robust: true},
+	"US100":    {WinRate: 0.661, AvgWinBps: 107.87, AvgLossBps: 117.23, Robust: true, Side: "both"},
+	"PLATINUM": {WinRate: 0.633, AvgWinBps: 142.83, AvgLossBps: 136.42, Robust: true, Side: "both"},
+	"EURUSD":   {WinRate: 0.537, AvgWinBps: 34.30, AvgLossBps: 34.28, Robust: true, Side: "long"},
+	"NATGAS":   {WinRate: 0.551, AvgWinBps: 296.51, AvgLossBps: 322.73, Robust: true, Side: "long"},
 }
 
 const (
 	// MaxRiskPct is a hard ceiling applied after half-Kelly and the
 	// stability discount, regardless of what the formula outputs — raw
-	// Kelly off a ~150-trade sample routinely suggests double-digit
+	// Kelly off a ~150-300 trade sample routinely suggests double-digit
 	// percentages that no real risk desk would run.
 	MaxRiskPct = 2.0
 	// UnstableDiscount shrinks the suggested size for an instrument whose
 	// backtest halves disagree (Robust == false): still tradeable while
 	// collecting more live data, but at a fraction of the size a fully
-	// confirmed instrument gets.
+	// confirmed instrument gets. Nothing currently in MeasuredIBSStats
+	// uses this — kept because the next breadth-search instrument that
+	// only partially confirms will need it.
 	UnstableDiscount = 0.25
 )
 

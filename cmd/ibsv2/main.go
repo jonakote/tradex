@@ -34,8 +34,13 @@ func main() {
 	trendBars := flag.Int("trend-bars", 200, "SMA window for the trend filter")
 	ibsLongBelow := flag.Int64("ibs-long-below-bps", 2000, "long when IBS <= this (2000 = 0.20)")
 	ibsExitAbove := flag.Int64("ibs-exit-above-bps", 5000, "exit-on-strength: close out when a later bar's IBS >= this (5000 = 0.50)")
+	ibsShortAbove := flag.Int64("ibs-short-above-bps", 8000, "short when IBS >= this (8000 = 0.80)")
+	ibsExitBelow := flag.Int64("ibs-exit-below-bps", 5000, "exit-on-weakness for shorts: close out when a later bar's IBS <= this")
+	side := flag.String("side", "long", "long | short | both -- which side(s) to measure (the live scan.IBS detector trades BOTH; this tool only measured long until now)")
 	maxHold := flag.Int("max-hold-bars", 10, "fallback max hold if strength exit never fires")
 	costBps := flag.Int64("cost-bps", 0, "round-trip cost in bps of price (0 = use per-symbol default)")
+	longSwapBps := flag.Float64("long-swap-bps", 0, "overnight financing cost per day held for a LONG, in bps of price (positive = cost, negative = credit; 0 = ignore, matching every edge reported before this flag existed)")
+	shortSwapBps := flag.Float64("short-swap-bps", 0, "overnight financing cost per day held for a SHORT, same convention")
 	splitDate := flag.String("split-date", "2023-01-01", "pre/post split for the holdout check")
 	flag.Parse()
 
@@ -78,11 +83,15 @@ func main() {
 
 	type trade struct {
 		closeTime time.Time
-		retBps    int64 // net of cost
+		retBps    int64 // net of cost AND swap
 		holdBars  int
 		exitKind  string
+		side      string
 	}
 	var trades []trade
+
+	takeLong := *side == "long" || *side == "both"
+	takeShort := *side == "short" || *side == "both"
 
 	for i := *trendBars; i < len(candles)-1; i++ {
 		sma := sma(candles[i-*trendBars+1 : i+1])
@@ -92,8 +101,12 @@ func main() {
 			continue
 		}
 		up := int64(c.Close) > sma
-		if !up || ibs > *ibsLongBelow {
-			continue // long-only per the trend filter; no signal
+		down := !up
+
+		tryLong := takeLong && up && ibs <= *ibsLongBelow
+		tryShort := takeShort && down && ibs >= *ibsShortAbove
+		if !tryLong && !tryShort {
+			continue
 		}
 		entry := c.Close
 		exitIdx := -1
@@ -101,7 +114,15 @@ func main() {
 		for h := 1; h <= *maxHold && i+h < len(candles); h++ {
 			future := candles[i+h]
 			fIBS, ok := features.IBSBps(future)
-			if ok && fIBS >= *ibsExitAbove {
+			if !ok {
+				continue
+			}
+			if tryLong && fIBS >= *ibsExitAbove {
+				exitIdx = i + h
+				kind = "STRENGTH"
+				break
+			}
+			if tryShort && fIBS <= *ibsExitBelow {
 				exitIdx = i + h
 				kind = "STRENGTH"
 				break
@@ -115,12 +136,23 @@ func main() {
 			exitIdx = i + h
 		}
 		exit := candles[exitIdx]
-		grossBps := int64(exit.Close-entry) * 10000 / int64(entry)
-		netBps := grossBps - cost
+		holdBars := exitIdx - i
+		var grossBps int64
+		var swapBps float64
+		sideLabel := "long"
+		if tryLong {
+			grossBps = int64(exit.Close-entry) * 10000 / int64(entry)
+			swapBps = *longSwapBps * float64(holdBars)
+		} else {
+			sideLabel = "short"
+			grossBps = int64(entry-exit.Close) * 10000 / int64(entry)
+			swapBps = *shortSwapBps * float64(holdBars)
+		}
+		netBps := grossBps - cost - int64(swapBps+0.5)
 
 		trades = append(trades, trade{
 			closeTime: exit.CloseTime, retBps: netBps,
-			holdBars: exitIdx - i, exitKind: kind,
+			holdBars: holdBars, exitKind: kind, side: sideLabel,
 		})
 	}
 
@@ -171,8 +203,8 @@ func main() {
 			post = append(post, t)
 		}
 	}
-	fmt.Printf("symbol=%s trend_bars=%d ibs_long_below=%dbps ibs_exit_above=%dbps max_hold=%d cost=%dbps split=%s\n",
-		*symbol, *trendBars, *ibsLongBelow, *ibsExitAbove, *maxHold, cost, *splitDate)
+	fmt.Printf("symbol=%s trend_bars=%d ibs_long_below=%dbps ibs_short_above=%dbps ibs_exit_above=%dbps ibs_exit_below=%dbps side=%s max_hold=%d cost=%dbps long_swap=%.3fbp/day short_swap=%.3fbp/day split=%s\n",
+		*symbol, *trendBars, *ibsLongBelow, *ibsShortAbove, *ibsExitAbove, *ibsExitBelow, *side, *maxHold, cost, *longSwapBps, *shortSwapBps, *splitDate)
 	report("full", trades)
 	report("pre-split", pre)
 	report("post-split", post)

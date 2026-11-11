@@ -1,0 +1,18 @@
+{
+  "capital": {
+    "symbols": ["EURUSD", "NATGAS"],
+    "interval": "1d"
+  },
+  "strategies": ["ibs"],
+  "ibs_hold": 10,
+  "ibs_long_below_bps": 2000,
+  "ibs_short_above_bps": 0,
+  "ibs_trend_filter_bars": 200,
+  "ibs_strength_exit_bps": 5000,
+  "poll_interval": "1h",
+  "journal": "data/forward_signals_daily_ibs_longonly_v2.jsonl",
+  "desktop": false,
+  "telegram": true,
+  "symbol_cooldown": "20h",
+  "group_cooldown": "20h"
+}

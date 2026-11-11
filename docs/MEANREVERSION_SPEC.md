@@ -319,6 +319,72 @@ table. Live config is now 5 instruments: `["XAGUSD", "EURUSD", "US100",
 "NATGAS", "PLATINUM"]`, spanning FX, metals (two: silver AND platinum),
 US equity index, and energy.
 
+## Critical correction — the short side was never measured, and real swap cost matters
+
+Asked to check real overnight financing before trusting any of the above
+with money. Two things surfaced, the first bigger than the second:
+
+**`cmd/ibsv2` only ever measured the LONG side.** The live `scan.IBS`
+detector fires both long (`LongBelowBps`) AND short (`ShortAboveBps`), and
+every live config this whole session has had `ibs_short_above_bps: 8000`
+enabled — meaning roughly half the signals actually delivered to Telegram
+all week (every SELL IBS signal) had NO measured backtest behind them at
+all. Extended `ibsv2` with `-side long|short|both` to fix this gap, then
+measured the short side on all 5 instruments (6y, same config):
+
+| Instrument | Short trades | Full edge | First half | Second half | Verdict |
+|---|---|---|---|---|---|
+| **US100** | 111 | +43.49bp | +46.84bp (91) | +28.25bp (20, thin) | confirms |
+| **PLATINUM** | 147 | +10.60bp | +4.00bp (83) | +19.17bp (64) | confirms |
+| EURUSD | 179 | +1.26bp | +10.23bp | **−11.18bp** | not robust |
+| NATGAS | 169 | −4.54bp | −18.05bp | +3.70bp | not robust |
+| XAGUSD | 139 | **−36.99bp** | −40.01bp | −30.45bp | negative, both halves |
+
+**Real overnight swap rates** (pulled live from `GET
+/api/v1/markets/{epic}` on 2026-11-10, in bps/day, positive = cost):
+
+| Instrument | Long swap | Short swap |
+|---|---|---|
+| EURUSD | +1.584 | −0.762 (credit) |
+| US100 | +2.221 | +0.002 |
+| NATGAS | +1.096 | +1.096 |
+| PLATINUM | +1.363 | −0.541 (credit) |
+| XAGUSD (SILVER) | +3.799 | −2.977 (credit) |
+
+None of the bp numbers reported anywhere in this document before today
+included this — only spread + slippage. Re-measured every instrument with
+real swap applied (avg hold ~1.7-2.0 days = 1-2 overnight charges/trade):
+
+- **US100 (both sides + swap)**: 316 trades, edge +22.44bp, halves
+  +31.09/+12.63bp — survives.
+- **PLATINUM (both sides + swap)**: 275 trades, edge +31.87bp, halves
+  +9.35/+50.10bp — survives.
+- **EURUSD (long only + swap)**: 149 trades, edge +2.95bp (down from
+  +6.32 without swap), halves +4.03/+2.35bp — survives, but thinner.
+- **NATGAS (long only + swap)**: 185 trades, edge +7.32bp, halves
+  +7.54/+7.13bp — survives, barely changed.
+- **XAGUSD (long only + swap)**: edge flips to **−2.50bp full-sample**
+  (was +4.24 without swap), halves still disagree (−43.76/+23.67bp).
+
+**Action taken:**
+- **XAGUSD removed entirely** from both the live forward test and the
+  sizing table. Three independent checks have now gone against it (the
+  uniform-6y-window retest, the short-side test, and now real swap cost)
+  — that is no longer "shaky," it is rejected.
+- **EURUSD and NATGAS**: kept LONG ONLY. Short-side signals disabled
+  (`ibs_short_above_bps: 0`) — they were firing live with no measured
+  basis, and now measured, they don't confirm. Moved to a separate config,
+  `docs/examples_watch_forward_daily_ibs_longonly_v2.json`.
+- **US100 and PLATINUM**: kept trading BOTH sides — the only two
+  instruments where both long and short independently confirm, and both
+  survive real swap cost. `docs/examples_watch_forward_daily_ibs_v2.json`.
+- `internal/execution/sizing.go` rewritten to match exactly what each live
+  config now emits, with stats net of real swap cost, not just spread.
+
+This is the single most consequential check performed on this strategy to
+date — it is the difference between "a measured edge" and "a measured
+edge on one side of the trade, running both sides live by accident."
+
 ## Intraday IBS (1h / 15m) — tested, not confirmed
 
 The literature's IBS effect is documented on DAILY bars only; it was worth
