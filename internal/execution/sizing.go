@@ -52,6 +52,10 @@ var MeasuredIBSStats = map[string]IBSStats{
 	// a commodity outside the FX/metals/equity-index families already
 	// tried. See docs/MEANREVERSION_SPEC.md.
 	"NATGAS": {WinRate: 0.551, AvgWinBps: 297.97, AvgLossBps: 320.29, Robust: true},
+	// PLATINUM: 128 trades (40/88 split, pre-split just over the 30-trade
+	// floor), both halves positive (+22.22bp / +74.72bp) -- a fifth
+	// confirming instrument. See docs/MEANREVERSION_SPEC.md.
+	"PLATINUM": {WinRate: 0.656, AvgWinBps: 165.33, AvgLossBps: 121.20, Robust: true},
 }
 
 const (

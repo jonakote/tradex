@@ -182,6 +182,12 @@ var registry = func() map[string]Spec {
 		Spec{Symbol: "BRENT", Class: ClassEnergy, Digits: 3, PriceScale: scaleFor(3), PipSize: 1},
 		Spec{Symbol: "NATGAS", Class: ClassEnergy, Digits: 4, PriceScale: scaleFor(4), PipSize: 1},
 		Spec{Symbol: "COPPER", Class: ClassMetal, Digits: 5, PriceScale: scaleFor(5), PipSize: 1},
+		Spec{Symbol: "PLATINUM", Class: ClassMetal, Digits: 2, PriceScale: scaleFor(2), PipSize: 1},
+		Spec{Symbol: "PALLADIUM", Class: ClassMetal, Digits: 2, PriceScale: scaleFor(2), PipSize: 1},
+		Spec{Symbol: "WHEAT", Class: ClassEnergy, Digits: 2, PriceScale: scaleFor(2), PipSize: 1},
+		Spec{Symbol: "CORN", Class: ClassEnergy, Digits: 2, PriceScale: scaleFor(2), PipSize: 1},
+		Spec{Symbol: "SOYBEAN", Class: ClassEnergy, Digits: 1, PriceScale: scaleFor(1), PipSize: 1},
+		Spec{Symbol: "COTTON", Class: ClassEnergy, Digits: 5, PriceScale: scaleFor(5), PipSize: 1},
 	)
 
 	table := make(map[string]Spec, len(specs))

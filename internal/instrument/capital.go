@@ -55,6 +55,14 @@ var capitalEpics = map[string]string{
 	"BRENT":   "OIL_BRENT",  // tickSize 0.001 -> 3 digits
 	"NATGAS":  "NATURALGAS", // tickSize 0.0001 -> 4 digits
 	"COPPER":  "COPPER",     // tickSize 0.00001 -> 5 digits
+
+	// More commodities, same verification on 2026-11-10.
+	"PLATINUM": "PLATINUM",  // tickSize 0.01 -> 2 digits
+	"PALLADIUM": "PALLADIUM", // tickSize 0.01 -> 2 digits
+	"WHEAT":    "WHEAT",     // tickSize 0.01 -> 2 digits
+	"CORN":     "CORN",      // tickSize 0.01 -> 2 digits
+	"SOYBEAN":  "SOYBEAN",   // tickSize 0.1 -> 1 digit
+	"COTTON":   "USCOTTON",  // tickSize 0.00001 -> 5 digits
 }
 
 // CapitalEpic returns the Capital.com epic for a symbol in any spelling. It

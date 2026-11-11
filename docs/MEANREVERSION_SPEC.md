@@ -292,6 +292,33 @@ labelled UNVALIDATED pending one more instrument confirmation outside
 these four families (FX, metals, US equity index, energy) before
 `Validated()` is considered.
 
+## Breadth search, round 4 — more commodities: PLATINUM confirms (5th instrument)
+
+Continued the commodity sweep that found NATGAS: verified 6 more real
+Capital.com epics (PLATINUM, PALLADIUM, WHEAT, CORN, SOYBEAN, COTTON via
+`USCOTTON`). Note: WHEAT's own Capital.com history has a persistent data
+defect — `tradex candles` rejected it with "invalid candle OHLC geometry"
+at three different start dates tried (2020, 2022, 2023); skipped rather
+than worked around, since silently patching a vendor's bad bar is exactly
+the kind of thing this project's candle validation exists to catch, not
+bypass.
+
+| Instrument | Sample | Trades | Full edge | First half | Second half | Verdict |
+|---|---|---|---|---|---|---|
+| **PLATINUM** | 6y | **128** | **+58.32bp** | **+22.22bp** (40) | **+74.72bp** (88) | **confirms — both halves positive** |
+| PALLADIUM | 6y | 94 | −6.78bp | −135.05bp | +42.26bp | not robust |
+| CORN | ~4.4y | 77 | −28.82bp | — | — | negative |
+| SOYBEAN | ~4.4y | 88 | −2.89bp | — | — | negative |
+| COTTON | ~4.4y | 101 | −48.58bp | −77.78bp | +23.92bp | not robust |
+
+**PLATINUM is a fifth confirming instrument** (pre-split 40 trades is
+just over the 30-trade floor — thinner than the others, worth another
+look once more data accumulates, but both halves genuinely positive, not
+a coin flip). Added to the live daily IBS forward test and the sizing
+table. Live config is now 5 instruments: `["XAGUSD", "EURUSD", "US100",
+"NATGAS", "PLATINUM"]`, spanning FX, metals (two: silver AND platinum),
+US equity index, and energy.
+
 ## Intraday IBS (1h / 15m) — tested, not confirmed
 
 The literature's IBS effect is documented on DAILY bars only; it was worth
