@@ -30,3 +30,4 @@ check_and_restart() {
 
 check_and_restart "docs/examples_watch_forward_daily_ibs_v2.json" "data/execute_v2.log"
 check_and_restart "docs/examples_watch_forward_daily_ibs_longonly_v2.json" "data/execute_longonly_v2.log"
+check_and_restart "docs/examples_watch_forward_daily_rsi2_v2.json" "data/execute_rsi2_v2.log"

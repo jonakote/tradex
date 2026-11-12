@@ -40,6 +40,14 @@ type WatchConfig struct {
 	IBSTrendFilterBars int   `json:"ibs_trend_filter_bars,omitempty"`
 	IBSStrengthExitBps int64 `json:"ibs_strength_exit_bps,omitempty"`
 
+	// RSI2 parameters (used only when "rsi2" is enabled). Same structure as
+	// IBS -- see docs/MEANREVERSION_SPEC.md.
+	RSI2Hold            int   `json:"rsi2_hold,omitempty"`
+	RSI2LongBelowBps    int64 `json:"rsi2_long_below_bps,omitempty"`
+	RSI2ShortAboveBps   int64 `json:"rsi2_short_above_bps,omitempty"`
+	RSI2TrendFilterBars int   `json:"rsi2_trend_filter_bars,omitempty"`
+	RSI2StrengthExitBps int64 `json:"rsi2_strength_exit_bps,omitempty"`
+
 	PollInterval string            `json:"poll_interval,omitempty"`
 	Journal      string            `json:"journal,omitempty"`
 	Desktop      bool              `json:"desktop,omitempty"`
@@ -111,6 +119,13 @@ func buildDetectors(cfg WatchConfig) ([]scan.Detector, error) {
 			}
 			out = append(out, scan.IBS{HoldBars: cfg.IBSHold, LongBelowBps: long, ShortAboveBps: cfg.IBSShortAboveBps,
 				TrendFilterBars: cfg.IBSTrendFilterBars, StrengthExitBps: cfg.IBSStrengthExitBps})
+		case "rsi2":
+			long := cfg.RSI2LongBelowBps
+			if long == 0 && cfg.RSI2ShortAboveBps == 0 {
+				long = 1000 // RSI(2) <= 10
+			}
+			out = append(out, scan.RSI2{HoldBars: cfg.RSI2Hold, LongBelowBps: long, ShortAboveBps: cfg.RSI2ShortAboveBps,
+				TrendFilterBars: cfg.RSI2TrendFilterBars, StrengthExitBps: cfg.RSI2StrengthExitBps})
 		default:
 			return nil, fmt.Errorf("unknown strategy %q", name)
 		}

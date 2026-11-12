@@ -29,6 +29,7 @@ import (
 	"tradex/internal/broker"
 	"tradex/internal/domain"
 	"tradex/internal/execution"
+	"tradex/internal/features"
 	"tradex/internal/feed"
 	"tradex/internal/instrument"
 	"tradex/internal/notify"
@@ -41,6 +42,7 @@ import (
 // missing here cannot be sized and will be skipped, not guessed.
 var marginFactorPct = map[string]float64{
 	"US100":    5,
+	"US500":    5,
 	"PLATINUM": 10,
 	"EURUSD":   3.333333,
 	"NATGAS":   10,
@@ -309,7 +311,7 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 
 		// Manage existing positions: exit-on-condition or max-hold.
 		for symbol, t := range trades.Trades {
-			spec, ok := instrument.Lookup(symbol)
+			_, ok := instrument.Lookup(symbol)
 			if !ok {
 				continue
 			}
@@ -327,11 +329,11 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 
 			exit := t.BarsHeld >= t.MaxHoldBars
 			if !exit && t.HoldExitRule != "" {
-				if ibs, ok := ibsOf(last, spec); ok {
-					if t.HoldExitRule == "ibs_strength_above" && ibs >= t.HoldExitThresholdBps {
+				if osc, ok := currentOscillatorBps(t.HoldExitRule, window); ok {
+					if strings.HasSuffix(t.HoldExitRule, "_strength_above") && osc >= t.HoldExitThresholdBps {
 						exit = true
 					}
-					if t.HoldExitRule == "ibs_strength_below" && ibs <= t.HoldExitThresholdBps {
+					if strings.HasSuffix(t.HoldExitRule, "_strength_below") && osc <= t.HoldExitThresholdBps {
 						exit = true
 					}
 				}
@@ -361,9 +363,8 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 			if _, open := trades.Trades[symbol]; open {
 				continue
 			}
-			stats, haveStats := execution.MeasuredIBSStats[symbol]
 			marginFactor, haveMargin := marginFactorPct[symbol]
-			if !haveStats || !haveMargin {
+			if !haveMargin {
 				continue
 			}
 			spec, ok := instrument.Lookup(symbol)
@@ -382,12 +383,14 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 			}
 			var setup scan.Setup
 			var found bool
+			var matchedStrategy string
 			for _, det := range detectors {
-				if det.Name() != "ibs" || len(window) < det.RequiredBars() {
+				name := strings.ToUpper(det.Name())
+				if (name != "IBS" && name != "RSI2") || len(window) < det.RequiredBars() {
 					continue
 				}
 				if s, ok := det.Detect(spec, window, spreadTicks); ok {
-					setup, found = s, true
+					setup, found, matchedStrategy = s, true, name
 					break
 				}
 			}
@@ -395,8 +398,32 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				continue
 			}
 
-			riskPct, ok := execution.HalfKellyRiskPct(symbol)
-			if !ok {
+			var stats execution.IBSStats
+			var riskPct float64
+			switch matchedStrategy {
+			case "IBS":
+				s, haveStats := execution.MeasuredIBSStats[symbol]
+				if !haveStats {
+					continue
+				}
+				stats = s
+				var ok bool
+				riskPct, ok = execution.HalfKellyRiskPct(symbol)
+				if !ok {
+					continue
+				}
+			case "RSI2":
+				s, haveStats := execution.MeasuredRSI2Stats[symbol]
+				if !haveStats {
+					continue
+				}
+				stats = s
+				var ok bool
+				riskPct, ok = execution.RSI2RiskPct(symbol)
+				if !ok {
+					continue
+				}
+			default:
 				continue
 			}
 			entryPrice := spec.Price(int64(setup.Entry))
@@ -487,10 +514,29 @@ func ibsOf(c domain.Candle, spec instrument.Spec) (int64, bool) {
 	return int64(c.Close-c.Low) * 10000 / rng, true
 }
 
+// currentOscillatorBps dispatches to the right underlying reading (IBS
+// needs only the latest candle; RSI2 needs the window's last 3 closes)
+// based on the hold-exit rule's strategy prefix, so the same generic
+// exit-management loop works for either strategy.
+func currentOscillatorBps(holdExitRule string, window []domain.Candle) (int64, bool) {
+	if len(window) == 0 {
+		return 0, false
+	}
+	switch {
+	case strings.HasPrefix(holdExitRule, "ibs_"):
+		return ibsOf(window[len(window)-1], instrument.Spec{})
+	case strings.HasPrefix(holdExitRule, "rsi2_"):
+		return features.RSI2Bps(window)
+	}
+	return 0, false
+}
+
 func tradeableSymbols(all []string) []string {
 	var out []string
 	for _, s := range all {
-		if _, ok := execution.MeasuredIBSStats[s]; ok {
+		_, inIBS := execution.MeasuredIBSStats[s]
+		_, inRSI2 := execution.MeasuredRSI2Stats[s]
+		if inIBS || inRSI2 {
 			out = append(out, s)
 		}
 	}

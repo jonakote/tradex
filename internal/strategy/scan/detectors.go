@@ -237,3 +237,72 @@ func smaCloseWindow(bars []domain.Candle) int64 {
 	}
 	return total / int64(len(bars))
 }
+
+// RSI2 is Connors' 2-period RSI mean-reversion signal, structured identically
+// to IBS (same trend filter, same exit-on-strength overlay, same hold cap) so
+// the two are directly comparable and can be measured/deployed the same way.
+// It is a DIFFERENT trigger from IBS (2-period RSI vs. close-position-in-
+// range), not a restatement of it — measured signal-day overlap with IBS is
+// only 21-39% on the instruments both confirm on, meaning most RSI2 trade
+// days are genuinely new, not duplicates. See docs/MEANREVERSION_SPEC.md.
+type RSI2 struct {
+	HoldBars        int
+	LongBelowBps    int64
+	ShortAboveBps   int64
+	TrendFilterBars int
+	StrengthExitBps int64
+}
+
+func (c RSI2) Name() string    { return "RSI2" }
+func (c RSI2) Spec() string    { return features.MeanReversionSpecVersion }
+func (c RSI2) Validated() bool { return false } // confirmed both-halves-positive on EURUSD/US100/US500/NATGAS/PLATINUM/BRENT in research, not yet re-verified on a fresh holdout -- see docs/MEANREVERSION_SPEC.md
+func (c RSI2) RequiredBars() int {
+	if c.TrendFilterBars > 3 {
+		return c.TrendFilterBars
+	}
+	return 3
+}
+
+func (c RSI2) Detect(_ instrument.Spec, window []domain.Candle, _ int64) (Setup, bool) {
+	if len(window) == 0 {
+		return Setup{}, false
+	}
+	last := window[len(window)-1]
+	rsi, ok := features.RSI2Bps(window)
+	if !ok {
+		return Setup{}, false
+	}
+	hold := c.HoldBars
+	if hold < 1 {
+		hold = 1
+	}
+	up, down := true, true
+	if c.TrendFilterBars > 1 && len(window) >= c.TrendFilterBars {
+		sma := smaCloseWindow(window[len(window)-c.TrendFilterBars:])
+		up = int64(last.Close) > sma
+		down = !up
+	}
+	switch {
+	case c.LongBelowBps > 0 && rsi <= c.LongBelowBps && up:
+		setup := Setup{Side: "buy", EntryType: "MARKET", Entry: last.Close, HoldBars: hold,
+			DetectedAt:  last.CloseTime,
+			Reason:      fmt.Sprintf("RSI(2) %d bps (oversold), trend-filtered; mean-reversion long, exit in up to %d bars", rsi, hold),
+			Diagnostics: map[string]any{"rsi2_bps": rsi, "hold_bars": hold, "trend_filter_bars": c.TrendFilterBars}}
+		if c.StrengthExitBps > 0 {
+			setup.HoldExitRule = "rsi2_strength_above"
+			setup.HoldExitThresholdBps = c.StrengthExitBps
+		}
+		return setup, true
+	case c.ShortAboveBps > 0 && rsi >= c.ShortAboveBps && down:
+		setup := Setup{Side: "sell", EntryType: "MARKET", Entry: last.Close, HoldBars: hold,
+			DetectedAt:  last.CloseTime,
+			Reason:      fmt.Sprintf("RSI(2) %d bps (overbought), trend-filtered; mean-reversion short, exit in up to %d bars", rsi, hold),
+			Diagnostics: map[string]any{"rsi2_bps": rsi, "hold_bars": hold, "trend_filter_bars": c.TrendFilterBars}}
+		if c.StrengthExitBps > 0 {
+			setup.HoldExitRule = "rsi2_strength_below"
+			setup.HoldExitThresholdBps = c.StrengthExitBps
+		}
+		return setup, true
+	}
+	return Setup{}, false
+}

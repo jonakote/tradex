@@ -273,3 +273,53 @@ negative (−2.78bp) — again not primarily a cost problem.
 "add multi-timeframe confirmation to CRT" idea isn't re-tested from zero —
 the multi-timeframe refinement changes *which* trades you take (higher win
 rate, different R distribution) without changing the sign of the answer.
+
+## RSI(2) mean reversion: a genuinely new, confirmed, DEPLOYED strategy (2026-11-12)
+
+The first new strategy family to clear this project's promotion bar since
+IBS. Connors' 2-period RSI, same v0.2 overlay structure as IBS (200-day
+trend filter, exit-on-strength, 10-day max hold) so the two are directly
+comparable: `features.RSI2Bps`, `scan.RSI2`, measured with a new tool
+`cmd/rsi2v2` (mirrors `cmd/ibsv2` exactly).
+
+**A real self-correction mid-measurement, worth recording as a lesson**:
+a first-pass check (ad hoc Python, no drift-adjustment) showed 6
+instruments confirming (EURUSD, US100, US500, NATGAS, PLATINUM, BRENT).
+Re-measured properly in Go with the SAME drift-adjustment IBS's own
+numbers always use (forward return minus the unconditional baseline for
+the same hold length) plus real swap cost, only **3 survive**:
+
+| Instrument | Trades | Win% | Full edge (net of swap) | 1st half | 2nd half |
+|---|---|---|---|---|---|
+| US100 | 260 | 71.9% | +25.50bp | +24.42bp | +26.13bp |
+| **US500** | 272 | 71.7% | +19.33bp | +4.99bp (thin) | +28.49bp |
+| PLATINUM | 156 | 71.2% | +74.67bp | +26.84bp | +97.23bp |
+
+EURUSD flips sign between halves once real swap is included (+5.00bp /
+−4.35bp) — excluded. NATGAS and BRENT were only "confirmed" in the
+non-drift-adjusted first pass and don't survive proper measurement —
+excluded. **US500 is a genuinely new instrument** — not in any live IBS
+config.
+
+Signal-day overlap with IBS on the shared instruments (US100, PLATINUM) is
+only 21-39% — most RSI2 trade days are genuinely new, not a restatement of
+IBS's own signal (checked explicitly before trusting this as incremental
+frequency rather than double-counting).
+
+**A serious bug caught and fixed while wiring this in**: `cmd/tradex
+execute.go`'s entry-detection loop checked `det.Name() != "ibs"`
+(lowercase), but `scan.IBS.Name()` returns `"IBS"` (uppercase) — the
+comparison has NEVER matched since `execute.go` was built. Every signal
+this whole time was correctly managed on the exit side (existing open
+positions) but **the live demo system has never been capable of detecting
+a single new entry**, regardless of real market conditions. This explains
+why zero trades fired even when EURUSD was within ~2 percentage points of
+its IBS threshold. Fixed with a case-insensitive, two-strategy-aware check.
+
+**Deployed**: `docs/examples_watch_forward_daily_rsi2_v2.json` (US100,
+US500, PLATINUM, long only) now runs alongside the two IBS configs on
+demo. `internal/execution/sizing.go` extended with `MeasuredRSI2Stats` and
+a generic `riskPct` helper shared by `HalfKellyRiskPct`/`RSI2RiskPct`.
+`cmd/tradex/execute.go` generalized to size and manage either strategy
+(oscillator dispatch via `currentOscillatorBps`, matching on the
+`ibs_`/`rsi2_` prefix of each position's `HoldExitRule`).

@@ -207,6 +207,8 @@ func MinDealSize(symbol string) float64 {
 	switch symbol {
 	case "US100":
 		return 0.001
+	case "US500":
+		return 0.01
 	case "PLATINUM":
 		return 0.01
 	case "EURUSD":

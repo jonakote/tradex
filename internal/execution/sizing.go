@@ -70,6 +70,37 @@ var MeasuredIBSStats = map[string]IBSStats{
 	"NATGAS":   {WinRate: 0.551, AvgWinBps: 296.51, AvgLossBps: 322.73, Robust: true, Side: "long"},
 }
 
+// MeasuredRSI2Stats: Connors' 2-period RSI mean-reversion, same v0.2
+// overlay structure as IBS (200-day trend filter, exit-on-strength >=70,
+// 10-day max hold), from `cmd/rsi2v2` on the full available 6-year sample,
+// net of real cost AND real overnight swap (2026-11-11 rates), with proper
+// drift-adjustment (forward return minus the unconditional baseline for
+// the same hold length) -- the same standard IBS is held to.
+//
+// A first pass WITHOUT drift-adjustment (quick Python check) showed 6
+// instruments confirming; re-measured properly in Go, only 3 survive:
+//   - US100 (long only): 260 trades, win 71.9%, drift-adjusted edge both
+//     halves positive (+24.42bp / +26.13bp).
+//   - US500 (long only, a genuinely NEW instrument -- not in any live IBS
+//     config): 272 trades, win 71.7%, both halves positive (+4.99bp thin
+//     but positive / +28.49bp).
+//   - PLATINUM (long only): 156 trades, win 71.2%, both halves positive
+//     (+26.84bp / +97.23bp).
+//
+// EURUSD, NATGAS and BRENT do NOT survive once drift and real swap are
+// both applied -- EURUSD flips sign between halves (+5.00bp / -4.35bp),
+// NATGAS and BRENT were only "confirmed" in the quick, non-drift-adjusted
+// first pass and are excluded here. See docs/MEANREVERSION_SPEC.md.
+//
+// Signal-day overlap with IBS on the shared instruments is only 21-39%
+// (measured before this correction) -- most RSI2 trade days are genuinely
+// new, not a restatement of IBS's own signal.
+var MeasuredRSI2Stats = map[string]IBSStats{
+	"US100":    {WinRate: 0.719, AvgWinBps: 102.27, AvgLossBps: 116.36, Robust: true, Side: "long"},
+	"US500":    {WinRate: 0.717, AvgWinBps: 81.39, AvgLossBps: 90.83, Robust: true, Side: "long"},
+	"PLATINUM": {WinRate: 0.712, AvgWinBps: 194.46, AvgLossBps: 171.56, Robust: true, Side: "long"},
+}
+
 const (
 	// MaxRiskPct is a hard ceiling applied after half-Kelly and the
 	// stability discount, regardless of what the formula outputs — raw
@@ -86,10 +117,20 @@ const (
 )
 
 // HalfKellyRiskPct returns the suggested percent of equity to risk on one
-// signal for symbol, and whether a measured size exists at all. 0, false
-// means "no measured stats — do not invent a size."
+// IBS signal for symbol, and whether a measured size exists at all. 0,
+// false means "no measured stats — do not invent a size."
 func HalfKellyRiskPct(symbol string) (float64, bool) {
-	stats, ok := MeasuredIBSStats[symbol]
+	return riskPct(MeasuredIBSStats, symbol)
+}
+
+// RSI2RiskPct is the RSI2 equivalent of HalfKellyRiskPct, same formula and
+// same safeguards, against MeasuredRSI2Stats instead.
+func RSI2RiskPct(symbol string) (float64, bool) {
+	return riskPct(MeasuredRSI2Stats, symbol)
+}
+
+func riskPct(table map[string]IBSStats, symbol string) (float64, bool) {
+	stats, ok := table[symbol]
 	if !ok || stats.AvgLossBps <= 0 || stats.AvgWinBps <= 0 {
 		return 0, false
 	}
