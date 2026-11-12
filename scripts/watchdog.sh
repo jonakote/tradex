@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Watchdog for the two live `tradex execute` demo-trading processes.
+# Watchdog for the live `tradex execute` demo-trading processes.
 # Run periodically (via cron, see docs/MEANREVERSION_SPEC.md) — checks
 # each one is actually running, restarts it if not, and logs every
 # check/restart so a silent stop (the thing this script exists to catch)
@@ -28,6 +28,6 @@ check_and_restart() {
     fi
 }
 
-check_and_restart "docs/examples_watch_forward_daily_ibs_v2.json" "data/execute_v2.log"
 check_and_restart "docs/examples_watch_forward_daily_ibs_longonly_v2.json" "data/execute_longonly_v2.log"
 check_and_restart "docs/examples_watch_forward_daily_rsi2_v2.json" "data/execute_rsi2_v2.log"
+check_and_restart "docs/examples_watch_forward_daily_confluence_v2.json" "data/execute_confluence_v2.log"

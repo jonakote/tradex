@@ -1,6 +1,6 @@
 {
   "capital": {
-    "symbols": ["US100", "US500", "PLATINUM"],
+    "symbols": ["US500"],
     "interval": "1d"
   },
   "strategies": ["rsi2"],

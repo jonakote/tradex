@@ -46,6 +46,9 @@ var marginFactorPct = map[string]float64{
 	"PLATINUM": 10,
 	"EURUSD":   3.333333,
 	"NATGAS":   10,
+	"XAUUSD":   5,
+	"GBPUSD":   3.333333,
+	"BTCUSD":   50,
 }
 
 type openTrade struct {
@@ -328,7 +331,19 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 			trades.Trades[symbol] = t
 
 			exit := t.BarsHeld >= t.MaxHoldBars
-			if !exit && t.HoldExitRule != "" {
+			if !exit && t.HoldExitRule == "confluence_strength_above" {
+				// OR of both oscillators against their own strategy's
+				// threshold -- the only kind of exit confluence trades
+				// use, so hardcoded rather than routed through the
+				// generic single-value dispatch below.
+				if ibs, ok := currentOscillatorBps("ibs_strength_above", window); ok && ibs >= 5000 {
+					exit = true
+				}
+				if rsi2, ok := currentOscillatorBps("rsi2_strength_above", window); ok && rsi2 >= 7000 {
+					exit = true
+				}
+			}
+			if !exit && t.HoldExitRule != "" && t.HoldExitRule != "confluence_strength_above" {
 				if osc, ok := currentOscillatorBps(t.HoldExitRule, window); ok {
 					if strings.HasSuffix(t.HoldExitRule, "_strength_above") && osc >= t.HoldExitThresholdBps {
 						exit = true
@@ -381,18 +396,43 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 					spreadTicks = s
 				}
 			}
-			var setup scan.Setup
-			var found bool
-			var matchedStrategy string
+			var ibsSetup, rsi2Setup scan.Setup
+			var ibsOK, rsi2OK bool
 			for _, det := range detectors {
 				name := strings.ToUpper(det.Name())
 				if (name != "IBS" && name != "RSI2") || len(window) < det.RequiredBars() {
 					continue
 				}
 				if s, ok := det.Detect(spec, window, spreadTicks); ok {
-					setup, found, matchedStrategy = s, true, name
-					break
+					if name == "IBS" {
+						ibsSetup, ibsOK = s, true
+					} else {
+						rsi2Setup, rsi2OK = s, true
+					}
 				}
+			}
+
+			var setup scan.Setup
+			var found bool
+			var matchedStrategy string
+			switch {
+			// CONFLUENCE: IBS and RSI2 are NOT individually confirmed on
+			// these symbols (XAUUSD/GBPUSD) — only trade when both fire
+			// on the same symbol, same day, same side.
+			case execution.ConfluenceOnlySymbols[symbol]:
+				if ibsOK && rsi2OK && ibsSetup.Side == rsi2Setup.Side {
+					setup, found, matchedStrategy = ibsSetup, true, "CONFLUENCE"
+				}
+			// CONFLUENCE BOOST: IBS and RSI2 are ALREADY independently
+			// confirmed on these symbols (US100/PLATINUM) — a
+			// single-signal day still trades normally; agreement just
+			// gets a separately-measured, stronger size on top.
+			case execution.ConfluenceBoostSymbols[symbol] && ibsOK && rsi2OK && ibsSetup.Side == rsi2Setup.Side:
+				setup, found, matchedStrategy = ibsSetup, true, "CONFLUENCE"
+			case ibsOK:
+				setup, found, matchedStrategy = ibsSetup, true, "IBS"
+			case rsi2OK:
+				setup, found, matchedStrategy = rsi2Setup, true, "RSI2"
 			}
 			if !found {
 				continue
@@ -423,6 +463,21 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				if !ok {
 					continue
 				}
+			case "CONFLUENCE":
+				s, haveStats := execution.MeasuredConfluenceStats[symbol]
+				if !haveStats {
+					continue
+				}
+				stats = s
+				var ok bool
+				riskPct, ok = execution.ConfluenceRiskPct(symbol)
+				if !ok {
+					continue
+				}
+				// Confluence exits on EITHER oscillator reaching its own
+				// strategy's threshold, not a single generic one — see
+				// currentOscillatorBps's "confluence_strength_above" case.
+				setup.HoldExitRule = "confluence_strength_above"
 			default:
 				continue
 			}
@@ -536,7 +591,8 @@ func tradeableSymbols(all []string) []string {
 	for _, s := range all {
 		_, inIBS := execution.MeasuredIBSStats[s]
 		_, inRSI2 := execution.MeasuredRSI2Stats[s]
-		if inIBS || inRSI2 {
+		_, inConfluence := execution.MeasuredConfluenceStats[s]
+		if inIBS || inRSI2 || inConfluence {
 			out = append(out, s)
 		}
 	}

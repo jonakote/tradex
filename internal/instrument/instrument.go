@@ -143,6 +143,13 @@ var registry = func() map[string]Spec {
 		crypto("XRPUSDT", 4), // tickSize 0.0001
 		crypto("ADAUSDT", 4), // tickSize 0.0001
 	)
+	// Capital.com's OWN crypto CFDs -- a genuinely different venue/price
+	// series from the Binance pairs above (see internal/instrument/capital.go
+	// for why these are kept as separate symbols, never merged).
+	specs = append(specs,
+		crypto("BTCUSD", 2),
+		crypto("ETHUSD", 2),
+	)
 
 	// Energy and indices carry the conventions the repository already used
 	// (one point treated as one pip). These are NOT venue-verified: they
@@ -215,6 +222,12 @@ func MinDealSize(symbol string) float64 {
 		return 100 // Capital.com FX sizing: value in the market's own POINTS unit
 	case "NATGAS":
 		return 10
+	case "XAUUSD":
+		return 0.01
+	case "GBPUSD":
+		return 100 // Capital.com FX sizing: value in the market's own POINTS unit
+	case "BTCUSD":
+		return 0.0001
 	}
 	return 0
 }

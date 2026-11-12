@@ -1,0 +1,23 @@
+{
+  "capital": {
+    "symbols": ["US100", "PLATINUM", "XAUUSD", "GBPUSD"],
+    "interval": "1d"
+  },
+  "strategies": ["ibs", "rsi2"],
+  "ibs_hold": 10,
+  "ibs_long_below_bps": 2000,
+  "ibs_short_above_bps": 8000,
+  "ibs_trend_filter_bars": 200,
+  "ibs_strength_exit_bps": 5000,
+  "rsi2_hold": 10,
+  "rsi2_long_below_bps": 1000,
+  "rsi2_short_above_bps": 0,
+  "rsi2_trend_filter_bars": 200,
+  "rsi2_strength_exit_bps": 7000,
+  "poll_interval": "1h",
+  "journal": "data/forward_signals_daily_confluence_v2.jsonl",
+  "desktop": false,
+  "telegram": true,
+  "symbol_cooldown": "20h",
+  "group_cooldown": "20h"
+}

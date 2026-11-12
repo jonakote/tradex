@@ -63,6 +63,15 @@ var capitalEpics = map[string]string{
 	"CORN":     "CORN",      // tickSize 0.01 -> 2 digits
 	"SOYBEAN":  "SOYBEAN",   // tickSize 0.1 -> 1 digit
 	"COTTON":   "USCOTTON",  // tickSize 0.00001 -> 5 digits
+
+	// Capital.com's OWN crypto CFDs -- genuinely different instruments
+	// from BTCUSDT/ETHUSDT above (different venue, different price
+	// series; that's exactly why crypto was "deliberately absent" from
+	// this map before). Verified TRADEABLE via GET /api/v1/markets on
+	// 2026-11-12: BTCUSD bid/ask ~71790/71840, ETHUSD ~2010/2012, both
+	// 2-digit precision, marginFactor 50%.
+	"BTCUSD": "BTCUSD",
+	"ETHUSD": "ETHUSD",
 }
 
 // CapitalEpic returns the Capital.com epic for a symbol in any spelling. It

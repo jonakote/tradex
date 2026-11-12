@@ -99,7 +99,56 @@ var MeasuredRSI2Stats = map[string]IBSStats{
 	"US100":    {WinRate: 0.719, AvgWinBps: 102.27, AvgLossBps: 116.36, Robust: true, Side: "long"},
 	"US500":    {WinRate: 0.717, AvgWinBps: 81.39, AvgLossBps: 90.83, Robust: true, Side: "long"},
 	"PLATINUM": {WinRate: 0.712, AvgWinBps: 194.46, AvgLossBps: 171.56, Robust: true, Side: "long"},
+	// BTCUSD: measured on Capital.com's OWN price feed (NOT Binance's
+	// BTCUSDT -- those are different venues/price series, see
+	// internal/instrument/capital.go). Real daily swap cost included
+	// (0.0616438%/day long rate -> 6.16bps/day). 257 trades, both halves
+	// positive (+25.04bp/+53.38bp). ETHUSD was ALSO tested the same way
+	// and REJECTED: it looks fine on Binance but sign-flips on
+	// Capital.com's actual feed (-1.99bp/+86.85bp) -- not deployed.
+	"BTCUSD": {WinRate: 0.638, AvgWinBps: 223.33, AvgLossBps: 285.34, Robust: true, Side: "long"},
 }
+
+// MeasuredConfluenceStats: a SEPARATE, stronger signal from IBS and RSI2
+// agreeing on the same symbol, same day. Measured by splitting every
+// IBS-or-RSI2 signal day into three buckets (IBS only, RSI2 only, both) on
+// each instrument where at least one of IBS/RSI2 independently confirms;
+// confluence beat BOTH individual signals on every instrument tested, both
+// halves positive:
+//   - US100: 96 trades, win 68.8%, both halves positive (+26.35/+34.63bp) --
+//     a BOOST on top of IBS-alone and RSI2-alone, which are both ALSO
+//     individually confirmed here (see MeasuredIBSStats/MeasuredRSI2Stats).
+//   - PLATINUM: 50 trades (thinner, ~25/half -- right at the floor, not
+//     comfortably above it), win 66.0%, both halves positive
+//     (+35.97/+132.19bp) -- also a BOOST.
+//   - XAUUSD (gold): 89 trades, win 66.3%, both halves positive
+//     (+27.68/+17.07bp) -- IBS ALONE does not confirm here (sign flip), so
+//     XAUUSD is CONFLUENCE-ONLY: trade only when both fire, never on
+//     either alone.
+//   - GBPUSD: 74 trades (~37/half, at the floor), win 70.3%, both halves
+//     positive (+8.28/+15.05bp) -- neither IBS nor RSI2 confirms alone on
+//     GBPUSD; confluence rescues an instrument neither part could confirm
+//     by itself. CONFLUENCE-ONLY, same reasoning as XAUUSD.
+//
+// USDJPY and BTCUSDT were also tested: both show a sign flip on the
+// confluence bucket (USDJPY +16.94/-9.17bp, BTCUSDT -1.62/+53.39bp) and are
+// deliberately excluded.
+var MeasuredConfluenceStats = map[string]IBSStats{
+	"US100":    {WinRate: 0.688, AvgWinBps: 76.14, AvgLossBps: 69.93, Robust: true, Side: "long"},
+	"PLATINUM": {WinRate: 0.660, AvgWinBps: 171.56, AvgLossBps: 85.74, Robust: true, Side: "long"},
+	"XAUUSD":   {WinRate: 0.663, AvgWinBps: 84.88, AvgLossBps: 100.72, Robust: true, Side: "long"},
+	"GBPUSD":   {WinRate: 0.703, AvgWinBps: 27.94, AvgLossBps: 26.81, Robust: true, Side: "long"},
+}
+
+// ConfluenceOnlySymbols: IBS and RSI2 are NOT individually confirmed here --
+// only trade when both fire on the same symbol, same day.
+var ConfluenceOnlySymbols = map[string]bool{"XAUUSD": true, "GBPUSD": true}
+
+// ConfluenceBoostSymbols: IBS and RSI2 are ALREADY independently confirmed
+// here -- a single-signal day still trades normally at its own strategy's
+// size; confluence just gets a stronger, separately-measured size on top,
+// not a gate.
+var ConfluenceBoostSymbols = map[string]bool{"US100": true, "PLATINUM": true}
 
 const (
 	// MaxRiskPct is a hard ceiling applied after half-Kelly and the
@@ -127,6 +176,15 @@ func HalfKellyRiskPct(symbol string) (float64, bool) {
 // same safeguards, against MeasuredRSI2Stats instead.
 func RSI2RiskPct(symbol string) (float64, bool) {
 	return riskPct(MeasuredRSI2Stats, symbol)
+}
+
+// ConfluenceRiskPct is the confluence equivalent of HalfKellyRiskPct, same
+// formula and safeguards, against MeasuredConfluenceStats instead — used
+// both for ConfluenceOnlySymbols (the only size they ever trade at) and
+// ConfluenceBoostSymbols (a stronger size than their own single-signal
+// HalfKellyRiskPct/RSI2RiskPct, applied only when both fire together).
+func ConfluenceRiskPct(symbol string) (float64, bool) {
+	return riskPct(MeasuredConfluenceStats, symbol)
 }
 
 func riskPct(table map[string]IBSStats, symbol string) (float64, bool) {

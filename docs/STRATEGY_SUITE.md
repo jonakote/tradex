@@ -323,3 +323,89 @@ a generic `riskPct` helper shared by `HalfKellyRiskPct`/`RSI2RiskPct`.
 `cmd/tradex/execute.go` generalized to size and manage either strategy
 (oscillator dispatch via `currentOscillatorBps`, matching on the
 `ibs_`/`rsi2_` prefix of each position's `HoldExitRule`).
+
+## Confluence mean reversion: IBS and RSI(2) agreeing (2026-11-12)
+
+A genuinely new idea, not another parallel strategy: split every IBS-or-
+RSI2 signal day into three buckets (IBS fires alone, RSI2 fires alone,
+both fire on the same symbol same day) and measure each separately. On
+every instrument tested, the "both fire" bucket beat BOTH individual
+signals, both halves positive:
+
+| Instrument | IBS alone | RSI2 alone | **Confluence (both fire)** |
+|---|---|---|---|
+| US100 | 107 trades, +18.45bp | 163 trades, +13.28bp | **96 trades, +30.49bp** (halves +26.35/+34.63) |
+| PLATINUM | 78 trades, +56.84bp | 107 trades, +48.81bp | **50 trades, +84.08bp** (halves +35.97/+132.19 — thinner, ~25/half, right at the floor) |
+| XAUUSD (gold) | sign flip, not robust | +11.75bp, consistent | **89 trades, +22.32bp** (halves +27.68/+17.07) |
+| GBPUSD | negative | negative, sign flip | **74 trades, +11.66bp** (halves +8.28/+15.05 — ~37/half, at the floor) |
+| USDJPY | negative | sign flip | sign flip (+16.94/-9.17) — **excluded** |
+| BTCUSDT (Binance) | negative | +44.30bp, consistent | sign flip (-1.62/+53.39) — **excluded** |
+
+**XAUUSD and GBPUSD are the interesting cases**: neither IBS nor RSI2
+confirms alone on either instrument, but their agreement does — confluence
+rescued two instruments neither individual signal could confirm by
+itself. US100 and PLATINUM get a size BOOST on top of their existing
+single-signal trades; XAUUSD and GBPUSD are CONFLUENCE-ONLY (never trade
+on either signal alone, since neither is individually confirmed there).
+
+**What was explicitly tried and rejected before this**: a confirmation-
+entry refinement (wait for an actual up-close before entering, the same
+LTF-confirmation idea that helped CRT/APA's win rate) was tested on
+IBS/RSI2 directly and made 6 of 7 cases WORSE, flipping PLATINUM's IBS
+and RSI2 both from strongly positive to negative — mean reversion's edge
+lives in entering AT the extreme, not after proof it's turning. Also
+tested and rejected: whether ICT/APA's edge is just trend-following in
+disguise (replicated only on EURUSD, contradicted on XAUUSD/US100).
+
+**Implementation** (`internal/execution/sizing.go`,
+`cmd/tradex/execute.go`): `MeasuredConfluenceStats`,
+`ConfluenceOnlySymbols` = {XAUUSD, GBPUSD}, `ConfluenceBoostSymbols` =
+{US100, PLATINUM}, `ConfluenceRiskPct`. The entry-detection loop now
+evaluates BOTH detectors per symbol (not break-on-first-match) and
+branches: confluence-only symbols require both to fire; boost symbols
+trade normally on either alone and get the confluence size when both
+agree; a combined position exits on EITHER oscillator's own threshold
+(`confluence_strength_above`, hardcoded OR check — a single generic
+threshold can't express two different oscillators' two different
+thresholds).
+
+**Deployed**: `docs/examples_watch_forward_daily_confluence_v2.json`
+(US100, PLATINUM, XAUUSD, GBPUSD; strategies `["ibs","rsi2"]`) replaces
+the former separate `ibs_v2`/`rsi2_v2` coverage of US100/PLATINUM (those
+two symbols moved out of `ibs_v2.json`/`rsi2_v2.json`, which now only
+covers EURUSD/NATGAS and US500 respectively). GOLD's real swap/margin
+verified live (-1.56/+0.74bp/day, margin 5%, min deal 0.01); GBPUSD's
+too (-0.40/-0.42bp/day, margin 3.33%, min deal 100).
+
+**Operational note**: the watchdog cron job still referenced the
+retired `ibs_v2.json` at the moment of the cutover and restarted it
+once before the script update landed — caught and stopped within
+minutes; `scripts/watchdog.sh` is now current.
+
+## Crypto RSI2, re-verified on Capital.com's own feed (2026-11-12)
+
+RSI2 looked strong on BTCUSDT/ETHUSDT via Binance's data (+41-68bp,
+consistent both halves) — but Binance and Capital.com's BTCUSD/ETHUSD
+CFDs are genuinely different instruments (different venue, different
+price series), and this project already has a standing rule never to
+conflate them. Re-measured on Capital.com's OWN 6-year feed, with real
+daily swap cost (0.0616%/day both symbols -> 6.16bps/day):
+
+| Instrument (Capital.com feed) | Trades | Win% | Edge | Halves |
+|---|---|---|---|---|
+| **BTCUSD** | 257 | 63.8% | **+39.26bp** | **+25.04 / +53.38 — CONFIRMS** |
+| ETHUSD | 227 | 64.3% | +42.63bp | -1.99 / +86.85 — sign flip, rejected |
+
+ETHUSD's Capital.com result does NOT match its Binance result — exactly
+the scenario the existing "crypto research stays on Binance, never
+conflated with Capital.com" rule exists to catch. Only BTCUSD is real on
+the actual tradable venue.
+
+**Deployed**: `BTCUSD`/`ETHUSD` added to `internal/instrument` as new,
+separate symbols from `BTCUSDT`/`ETHUSDT` (never merged). Only BTCUSD
+added to `MeasuredRSI2Stats` and traded, via
+`docs/examples_watch_forward_daily_rsi2_btc_v2.json`.
+
+**Live demo processes as of 2026-11-12, end of day**: `ibs_longonly_v2`
+(EURUSD, NATGAS), `rsi2_v2` (US500), `confluence_v2` (US100, PLATINUM,
+XAUUSD, GBPUSD), `rsi2_btc_v2` (BTCUSD). Watchdog covers all four.
