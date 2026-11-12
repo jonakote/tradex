@@ -212,3 +212,64 @@ forward-test logs already exposed (running unvalidated strategies and
 calling the resulting losses a surprise). Re-run with other HTF/LTF pairs,
 swing windows or instruments if a real edge is still suspected; the tool
 makes that a one-command measurement instead of a redeploy-and-wait.
+
+## CRT follow-up: multi-timeframe sweep/reclaim, tested two ways (2026-11-12)
+
+CRT itself was removed from the live codebase (see the commit that replaced
+it with the current IBS/Continuation/ICT/StructureTrend/TriangleBreakout
+suite; the original postmortem, `docs/CANDLE_RANGE_SPEC.md`, is preserved in
+git history at `035e5a5^:docs/CANDLE_RANGE_SPEC.md`). Two follow-up variants
+were tested ad hoc (Python, not merged into the Go codebase — this is a
+record of the result, not new production code) after a user proposal to add
+a specific multi-timeframe entry refinement: sweep+reclaim on a higher
+timeframe, wait one confirmation candle, then drop to a lower timeframe for
+entry, stop at the confirmation candle's wick, target at the swept candle's
+opposite extreme. EURUSD, XAUUSD, US100; 1h setup / 15m entry; real spread
+cost; both-halves split.
+
+**Variant 1 — generic swing-anchored sweep, market entry.** Support/resistance
+= nearest confirmed 1h swing high/low (no clock-time or liquidity-confluence
+requirement), entry = market order at the next 15m bar after the third
+1h candle begins. 680-726 trades per instrument over ~15 months — negative
+on all three, and unusually *consistent* between halves (not sign-flipping,
+unlike the original CRT v0.1 postmortem):
+
+| Instrument | Trades | Win% | Full edge | 1st half | 2nd half |
+|---|---|---|---|---|---|
+| EURUSD | 726 | 21.3% | −2.16bp | −2.19bp | −2.13bp |
+| XAUUSD | 684 | 25.6% | −6.52bp | −6.67bp | −6.37bp |
+| US100 | 680 | 31.6% | −3.02bp | −2.46bp | −3.57bp |
+
+Negative even gross, before any cost (EURUSD −0.16bp, XAUUSD −1.52bp, US100
+−1.02bp) — not a cost story, no directional edge in the raw signal.
+
+**Variant 2 — the inventor's actual rules** (Romeotpt/TTrades' "Candle Range
+Theory": fixed kill-zone-hour range candle — not a generic swing — an
+accumulation/quiet-period filter, a confluence requirement against the prior
+day's extreme, and a genuine lower-timeframe market-structure-shift entry,
+i.e. price must close through a confirmed 15m swing level in the reversal
+direction, not a blind market order). Stacking every filter on one fixed
+hour collapsed the sample to 0-9 trades per instrument — unmeasurable (one
+9-trade XAUUSD cell showed a flattering 77.8% win rate; not reported as a
+result, exactly the small-sample mirage the project's ≥30-trade floor exists
+to block). Pooling across six commonly-cited kill-zone hours (2, 3, 5, 8, 9,
+13 NY) restored a measurable sample:
+
+| Instrument | Trades | Win% | Full edge | 1st half | 2nd half |
+|---|---|---|---|---|---|
+| EURUSD | 60 | 50.0% | −1.30bp | −2.22bp | −0.38bp |
+| XAUUSD | 69 | 44.9% | −5.51bp | −5.01bp | −5.99bp |
+| US100 | 70 | 61.4% | −4.78bp | −4.55bp | −5.00bp |
+
+Still negative, still consistent both halves, on all three. The real
+structure-shift entry roughly doubled the win rate versus the blind-entry
+variant (21-32% -> 45-61%) — it does filter out a meaningful share of false
+reclaims — but expectancy didn't follow: wins got smaller and losses bigger
+with the later, tighter entry, netting to the same negative conclusion.
+Gross (no cost): EURUSD ≈ 0 (+0.70bp), XAUUSD ≈ 0 (−0.51bp), US100 mildly
+negative (−2.78bp) — again not primarily a cost problem.
+
+**Verdict: no promotable edge in either variant.** Recorded so the next
+"add multi-timeframe confirmation to CRT" idea isn't re-tested from zero —
+the multi-timeframe refinement changes *which* trades you take (higher win
+rate, different R distribution) without changing the sign of the answer.
