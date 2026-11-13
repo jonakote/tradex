@@ -499,17 +499,31 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 			if size <= 0 {
 				continue
 			}
-			// Hard backstop independent of the margin-factor math above:
-			// never commit more than 15% of equity in notional to one
-			// trade, regardless of what the size calculation above
-			// produced. Protects against a unit-conversion mistake in
-			// MinDealSize/marginFactorPct actually causing an oversized
-			// order instead of just a documentation note about one.
-			if notional := size * entryPrice; notional > acct.Balance*0.15 {
-				logExec(map[string]any{"event": "entry_blocked", "symbol": symbol, "reason": "notional backstop: computed size too large relative to equity", "notional": notional, "equity": acct.Balance})
+			// Hard backstop independent of the risk-manager's own margin
+			// check below: never let a single trade's MARGIN requirement
+			// exceed 50% of equity, regardless of what the size
+			// calculation above produced. Protects against a
+			// unit-conversion mistake in MinDealSize/marginFactorPct
+			// actually causing an oversized order instead of just a
+			// documentation note about one -- 50% is well above
+			// RiskManager's own 25% total-committed-margin cap, so this
+			// only ever fires on something that already breaks that
+			// check too; it exists purely as a second, independent guard.
+			//
+			// This used to check raw NOTIONAL against 15% of equity, with
+			// no leverage adjustment -- on a $1000 account trading a
+			// ~$28,000 index at 5% margin, a correctly-sized, safe $550
+			// notional position (needing only $27.50 margin, 2.75% of
+			// equity) was rejected because $550 > $150 (15% of equity).
+			// That blocked every real signal on leveraged instruments from
+			// ever converting to a trade -- caught 2026-11-13 when four
+			// straight hours of US100 entry_blocked log lines turned out
+			// to be a real sizing bug, not low signal frequency.
+			thisMarginPct := size * entryPrice * marginFactor / 100 / acct.Balance * 100
+			if thisMarginPct > 50 {
+				logExec(map[string]any{"event": "entry_blocked", "symbol": symbol, "reason": "margin backstop: computed size too large relative to equity", "margin_pct": thisMarginPct})
 				continue
 			}
-			thisMarginPct := size * entryPrice * marginFactor / 100 / acct.Balance * 100
 
 			ok, reason := risk.ApproveEntry(acct.Balance, len(trades.Trades), committedMarginPct, thisMarginPct)
 			if !ok {
