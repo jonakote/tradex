@@ -68,6 +68,20 @@ var MeasuredIBSStats = map[string]IBSStats{
 	"PLATINUM": {WinRate: 0.633, AvgWinBps: 142.83, AvgLossBps: 136.42, Robust: true, Side: "both"},
 	"EURUSD":   {WinRate: 0.537, AvgWinBps: 34.30, AvgLossBps: 34.28, Robust: true, Side: "long"},
 	"NATGAS":   {WinRate: 0.551, AvgWinBps: 296.51, AvgLossBps: 322.73, Robust: true, Side: "long"},
+	// Breadth round 5 (2026-11-12), same methodology, real swap included:
+	// COPPER (long only, 110 trades, +13.53bp both halves) -- feeds BOTH
+	// a standalone trade AND the COPPER confluence boost below; its own
+	// RSI2 alone does NOT confirm, only in agreement with IBS.
+	// US30 (long only, 119 trades, +8.58bp both halves) -- standalone
+	// only; its confluence with RSI2 flips negative, deliberately NOT a
+	// confluence symbol.
+	// GBPJPY (long only, 65 trades, +4.70bp both halves) -- standalone
+	// only, same reasoning: its own RSI2 also confirms standalone (see
+	// MeasuredRSI2Stats) but the TWO COMBINED flip to -23.50bp -- GBPJPY
+	// must never be a confluence symbol.
+	"COPPER": {WinRate: 0.664, AvgWinBps: 87.11, AvgLossBps: 131.63, Robust: true, Side: "long"},
+	"US30":   {WinRate: 0.605, AvgWinBps: 55.30, AvgLossBps: 62.99, Robust: true, Side: "long"},
+	"GBPJPY": {WinRate: 0.600, AvgWinBps: 35.09, AvgLossBps: 40.88, Robust: true, Side: "long"},
 }
 
 // MeasuredRSI2Stats: Connors' 2-period RSI mean-reversion, same v0.2
@@ -107,6 +121,25 @@ var MeasuredRSI2Stats = map[string]IBSStats{
 	// and REJECTED: it looks fine on Binance but sign-flips on
 	// Capital.com's actual feed (-1.99bp/+86.85bp) -- not deployed.
 	"BTCUSD": {WinRate: 0.638, AvgWinBps: 223.33, AvgLossBps: 285.34, Robust: true, Side: "long"},
+	// Breadth round 5 (2026-11-12), real swap included:
+	// J225 (171 trades, +29.86bp both halves) -- standalone; its
+	// confluence with IBS is weaker than RSI2 alone here (odd, but
+	// real), not worth a boost -- NOT a confluence symbol.
+	// BRENT, WTI (long only) -- standalone RSI2 confirms AND agreement
+	// with IBS confirms even stronger; both are confluence-boost symbols.
+	// USDCAD, AUDJPY, EURJPY, EURGBP -- standalone only; each one's
+	// confluence with IBS flips negative once real swap is included
+	// (USDCAD's confluence flipped specifically from the swap addition),
+	// so none of these four are confluence symbols.
+	// GBPJPY -- standalone only, same reasoning as its IBS entry above.
+	"J225":   {WinRate: 0.667, AvgWinBps: 105.10, AvgLossBps: 120.62, Robust: true, Side: "long"},
+	"BRENT":  {WinRate: 0.642, AvgWinBps: 216.42, AvgLossBps: 223.61, Robust: true, Side: "long"},
+	"WTI":    {WinRate: 0.573, AvgWinBps: 217.03, AvgLossBps: 196.16, Robust: true, Side: "long"},
+	"USDCAD": {WinRate: 0.624, AvgWinBps: 29.45, AvgLossBps: 27.35, Robust: true, Side: "long"},
+	"AUDJPY": {WinRate: 0.626, AvgWinBps: 47.49, AvgLossBps: 63.59, Robust: true, Side: "long"},
+	"EURJPY": {WinRate: 0.605, AvgWinBps: 35.88, AvgLossBps: 38.34, Robust: true, Side: "long"},
+	"EURGBP": {WinRate: 0.573, AvgWinBps: 27.58, AvgLossBps: 26.96, Robust: true, Side: "long"},
+	"GBPJPY": {WinRate: 0.676, AvgWinBps: 33.21, AvgLossBps: 52.00, Robust: true, Side: "long"},
 }
 
 // MeasuredConfluenceStats: a SEPARATE, stronger signal from IBS and RSI2
@@ -138,17 +171,28 @@ var MeasuredConfluenceStats = map[string]IBSStats{
 	"PLATINUM": {WinRate: 0.660, AvgWinBps: 171.56, AvgLossBps: 85.74, Robust: true, Side: "long"},
 	"XAUUSD":   {WinRate: 0.663, AvgWinBps: 84.88, AvgLossBps: 100.72, Robust: true, Side: "long"},
 	"GBPUSD":   {WinRate: 0.703, AvgWinBps: 27.94, AvgLossBps: 26.81, Robust: true, Side: "long"},
+	// Breadth round 5 (2026-11-12), real swap included:
+	// BRENT, WTI -- agreement beats RSI2 alone even further (boost).
+	// COPPER -- agreement beats IBS alone (boost); COPPER's RSI2 alone
+	// does NOT confirm, so COPPER is NOT in MeasuredRSI2Stats at all --
+	// confluence is the only way RSI2's reading contributes here.
+	// AUDUSD -- neither IBS nor RSI2 confirms alone; confluence rescues
+	// it, same pattern as XAUUSD/GBPUSD above.
+	"BRENT":  {WinRate: 0.673, AvgWinBps: 231.15, AvgLossBps: 190.14, Robust: true, Side: "long"},
+	"WTI":    {WinRate: 0.638, AvgWinBps: 174.05, AvgLossBps: 182.49, Robust: true, Side: "long"},
+	"COPPER": {WinRate: 0.756, AvgWinBps: 98.59, AvgLossBps: 243.68, Robust: true, Side: "long"},
+	"AUDUSD": {WinRate: 0.645, AvgWinBps: 34.17, AvgLossBps: 41.67, Robust: true, Side: "long"},
 }
 
 // ConfluenceOnlySymbols: IBS and RSI2 are NOT individually confirmed here --
 // only trade when both fire on the same symbol, same day.
-var ConfluenceOnlySymbols = map[string]bool{"XAUUSD": true, "GBPUSD": true}
+var ConfluenceOnlySymbols = map[string]bool{"XAUUSD": true, "GBPUSD": true, "AUDUSD": true}
 
 // ConfluenceBoostSymbols: IBS and RSI2 are ALREADY independently confirmed
 // here -- a single-signal day still trades normally at its own strategy's
 // size; confluence just gets a stronger, separately-measured size on top,
 // not a gate.
-var ConfluenceBoostSymbols = map[string]bool{"US100": true, "PLATINUM": true}
+var ConfluenceBoostSymbols = map[string]bool{"US100": true, "PLATINUM": true, "BRENT": true, "WTI": true, "COPPER": true}
 
 const (
 	// MaxRiskPct is a hard ceiling applied after half-Kelly and the

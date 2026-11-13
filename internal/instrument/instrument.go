@@ -228,6 +228,16 @@ func MinDealSize(symbol string) float64 {
 		return 100 // Capital.com FX sizing: value in the market's own POINTS unit
 	case "BTCUSD":
 		return 0.0001
+	case "J225":
+		return 0.1
+	case "WTI", "BRENT":
+		return 1
+	case "COPPER":
+		return 10
+	case "US30":
+		return 0.001
+	case "USDCAD", "AUDJPY", "EURJPY", "EURGBP", "GBPJPY", "AUDUSD":
+		return 100 // Capital.com FX sizing: value in the market's own POINTS unit
 	}
 	return 0
 }

@@ -30,4 +30,7 @@ check_and_restart() {
 
 check_and_restart "docs/examples_watch_forward_daily_ibs_longonly_v2.json" "data/execute_longonly_v2.log"
 check_and_restart "docs/examples_watch_forward_daily_rsi2_v2.json" "data/execute_rsi2_v2.log"
-check_and_restart "docs/examples_watch_forward_daily_confluence_v2.json" "data/execute_confluence_v2.log"
+check_and_restart "docs/examples_watch_forward_daily_confluence_both_v2.json" "data/execute_confluence_both_v2.log"
+check_and_restart "docs/examples_watch_forward_daily_confluence_longonly_v2.json" "data/execute_confluence_longonly_v2.log"
+check_and_restart "docs/examples_watch_forward_daily_standalone_v2.json" "data/execute_standalone_v2.log"
+check_and_restart "docs/examples_watch_forward_daily_rsi2_btc_v2.json" "data/execute_rsi2_btc_v2.log"

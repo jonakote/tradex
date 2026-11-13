@@ -409,3 +409,67 @@ added to `MeasuredRSI2Stats` and traded, via
 **Live demo processes as of 2026-11-12, end of day**: `ibs_longonly_v2`
 (EURUSD, NATGAS), `rsi2_v2` (US500), `confluence_v2` (US100, PLATINUM,
 XAUUSD, GBPUSD), `rsi2_btc_v2` (BTCUSD). Watchdog covers all four.
+
+## Breadth round 5: 18 more instruments, real swap, same rigor (2026-11-12)
+
+Extended the IBS/RSI2/confluence three-bucket test to indices, more FX
+majors/crosses, energy and metals (18 instruments), THEN pulled real
+swap rates for every survivor before trusting any of it — the exact
+step that flipped XAGUSD and USDCAD's confluence number this round
+(confluence was positive gross-of-swap, negative once real swap was
+included).
+
+**Confirmed, real swap included, both halves positive:**
+
+| Instrument | Bucket(s) | n | Edge |
+|---|---|---|---|
+| J225 (Nikkei) | RSI2 alone | 171 | +29.86bp |
+| BRENT | RSI2 alone + confluence boost | 81 / 49 | +58.88bp / +93.59bp |
+| WTI | RSI2 alone + confluence boost | 117 / 47 (thin, ~24/half) | +40.45bp / +45.09bp |
+| COPPER | IBS alone + confluence boost | 110 / 78 | +13.53bp / +15.22bp |
+| US30 (Dow) | IBS alone only | 119 | +8.58bp |
+| USDCAD | RSI2 alone only | 170 | +8.07bp |
+| AUDJPY | RSI2 alone only | 163 | +5.92bp |
+| EURJPY | RSI2 alone only | 200 | +6.56bp |
+| EURGBP | RSI2 alone only (thinner, ~48/half) | 96 | +4.29bp |
+| GBPJPY | IBS alone AND RSI2 alone, run independently | 65 / 207 | +4.70bp / +5.63bp |
+| AUDUSD | confluence only | 62 | +7.26bp |
+
+**Rejected after real swap, or structurally excluded from combining**:
+- USDCAD's and US30's confluence bucket looked positive gross-of-swap
+  but FLIP negative once real swap is included — both kept as
+  standalone-only, never added to the confluence sets.
+- **GBPJPY is the most important exclusion**: IBS alone (+4.70bp) and
+  RSI2 alone (+5.63bp) BOTH confirm independently on it, but the
+  COMBINED confluence bucket is strongly negative (-23.50bp). GBPJPY
+  trades both strategies independently, deliberately never merged.
+- DE40, UK100, FR40, USDCHF, NZDUSD, PALLADIUM, COTTON: flip somewhere
+  in every bucket, excluded entirely. CORN and SOYBEAN had no usable
+  candle data (empty fetch), not tested.
+
+**Architecture fix made before deploying**: IBS's short side is a
+single config-level flag (`ibs_short_above_bps`) shared by every symbol
+in one process — US100/PLATINUM's both-sided edge is real and measured,
+but BRENT/WTI/COPPER/AUDUSD/XAUUSD/GBPUSD were only ever measured LONG.
+Putting them in the same config as US100/PLATINUM would have silently
+enabled untested short trades for all of them. Split into
+`confluence_both_v2.json` (US100, PLATINUM, both sides) and
+`confluence_longonly_v2.json` (XAUUSD, GBPUSD, BRENT, WTI, COPPER,
+AUDUSD, long only) instead of one shared config.
+
+**Deployed**: `confluence_both_v2.json` (US100, PLATINUM),
+`confluence_longonly_v2.json` (XAUUSD, GBPUSD, BRENT, WTI, COPPER,
+AUDUSD), `standalone_v2.json` (J225, US30, USDCAD, AUDJPY, EURJPY,
+EURGBP, GBPJPY — both strategies run, but none of these seven are in
+either confluence set, so IBS and RSI2 trade independently per symbol).
+`internal/execution/sizing.go` extended with 11 new instrument entries
+across `MeasuredIBSStats`/`MeasuredRSI2Stats`/`MeasuredConfluenceStats`
+and the `ConfluenceOnlySymbols`/`ConfluenceBoostSymbols` sets grew to
+include BRENT/WTI/COPPER (boost) and AUDUSD (only).
+
+**Live demo processes as of 2026-11-13**: `ibs_longonly_v2` (EURUSD,
+NATGAS), `rsi2_v2` (US500), `confluence_both_v2` (US100, PLATINUM),
+`confluence_longonly_v2` (XAUUSD, GBPUSD, BRENT, WTI, COPPER, AUDUSD),
+`standalone_v2` (J225, US30, USDCAD, AUDJPY, EURJPY, EURGBP, GBPJPY),
+`rsi2_btc_v2` (BTCUSD). Six processes total, 16 instruments. Watchdog
+covers all six.

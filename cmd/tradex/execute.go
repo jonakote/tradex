@@ -49,6 +49,17 @@ var marginFactorPct = map[string]float64{
 	"XAUUSD":   5,
 	"GBPUSD":   3.333333,
 	"BTCUSD":   50,
+	"J225":     5,
+	"WTI":      10,
+	"BRENT":    10,
+	"COPPER":   10,
+	"US30":     5,
+	"USDCAD":   3.333333,
+	"AUDJPY":   5,
+	"EURJPY":   3.333333,
+	"EURGBP":   3.333333,
+	"GBPJPY":   3.333333,
+	"AUDUSD":   5,
 }
 
 type openTrade struct {
