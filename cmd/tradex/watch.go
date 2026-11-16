@@ -417,7 +417,7 @@ func buildStrategySignal(det scan.Detector, setup scan.Setup, spec instrument.Sp
 	}
 
 	sig := notify.Signal{
-		Validated:   det.Validated(),
+		Validated:   execution.IsValidated(det.Name(), spec.Symbol),
 		Strategy:    det.Name(),
 		SpecVersion: det.Spec(),
 		Symbol:      spec.Symbol,

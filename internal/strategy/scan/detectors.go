@@ -178,7 +178,7 @@ type IBS struct {
 
 func (c IBS) Name() string    { return "IBS" }
 func (c IBS) Spec() string    { return features.MeanReversionSpecVersion }
-func (c IBS) Validated() bool { return false } // see docs/MEANREVERSION_SPEC.md: 2/5 instruments confirm so far, below the project's full promotion bar
+func (c IBS) Validated() bool { return false } // interface-level default only -- real per-symbol confirmation now lives in execution.IsValidated("IBS", symbol), which cmd/tradex/watch.go actually uses for signal tagging; this blunt false stays as the conservative fallback for any caller without a symbol in hand
 func (c IBS) RequiredBars() int {
 	if c.TrendFilterBars > 2 {
 		return c.TrendFilterBars
@@ -255,7 +255,7 @@ type RSI2 struct {
 
 func (c RSI2) Name() string    { return "RSI2" }
 func (c RSI2) Spec() string    { return features.MeanReversionSpecVersion }
-func (c RSI2) Validated() bool { return false } // confirmed both-halves-positive on EURUSD/US100/US500/NATGAS/PLATINUM/BRENT in research, not yet re-verified on a fresh holdout -- see docs/MEANREVERSION_SPEC.md
+func (c RSI2) Validated() bool { return false } // interface-level default only -- real per-symbol confirmation now lives in execution.IsValidated("RSI2", symbol), which cmd/tradex/watch.go actually uses for signal tagging; this blunt false stays as the conservative fallback for any caller without a symbol in hand
 func (c RSI2) RequiredBars() int {
 	if c.TrendFilterBars > 3 {
 		return c.TrendFilterBars
