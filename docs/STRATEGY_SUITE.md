@@ -473,3 +473,109 @@ NATGAS), `rsi2_v2` (US500), `confluence_both_v2` (US100, PLATINUM),
 `standalone_v2` (J225, US30, USDCAD, AUDJPY, EURJPY, EURGBP, GBPJPY),
 `rsi2_btc_v2` (BTCUSD). Six processes total, 16 instruments. Watchdog
 covers all six.
+
+## Two separate bars: backtest-confirmed vs. live-validated (2026-11-15)
+
+`execution.IsValidated(strategy, symbol)` (added 2026-11-15, replacing
+a hardcoded per-detector constant — see "Validated signal tag now
+data-driven" below) answers ONE question: does this strategy+symbol
+pair clear the **backtest bar** — both halves positive, net of real
+cost, ≥30 trades/half, ≥2 instruments per strategy. Every instrument
+in `MeasuredIBSStats`/`MeasuredRSI2Stats`/`MeasuredConfluenceStats`
+already clears this.
+
+That is NOT the same as being proven safe to fully trust. A second,
+separate **live-validated bar** exists, and as of this writing nothing
+has cleared it — there has been exactly one real auto-detected live
+trade (US100, 2026-11-13) since the case-mismatch bug was fixed. The
+live-validated bar, until further revised:
+
+1. **≥20-30 real executed trades** (filled positions, not just
+   signals) per strategy, counted only from after the strategy's
+   detection pipeline was confirmed actually working — a sample
+   partially collected while something was silently broken (e.g. the
+   `"ibs"`/`"IBS"` case-mismatch bug) does not count toward this.
+2. **Spread across ≥2-3 of the confirmed instruments**, not
+   concentrated on one symbol — same reasoning as the backtest's
+   ≥2-instrument rule: one instrument's luck should not carry the
+   whole verdict.
+3. **Win rate and expectancy roughly in line with the backtest**, not
+   identical but not wildly divergent either. A live sample sitting far
+   outside the backtest's measured range is a signal to investigate,
+   not a result to average away or ignore because the trade-count
+   target was hit.
+4. **No major operational bug active during the accumulation window.**
+
+Report progress against this explicitly (e.g. "1/20-30 live trades,
+US100 only, one instrument") rather than letting backtest confirmation
+get casually described as "validated" without the live-trade caveat
+in the same breath — the whole reason two bars exist is that they have
+already diverged once in this project's history (IBS/RSI2 cleared the
+backtest bar while the live pipeline was silently non-functional the
+entire time).
+
+## Project ideology and code-structure decisions worth preserving
+
+Captured here because these came up repeatedly in discussion but were
+never written down as standing decisions — future sessions should read
+this before re-deriving or accidentally reversing any of them:
+
+- **A strategy is a pure function over closed candles, nothing else.**
+  Every detector implements `scan.Detector` and is consumed identically
+  by the live monitor and the measurement harness — this is why "measured
+  one way, traded another" cannot happen by construction, not by
+  discipline. Any new strategy idea gets built this way FIRST, before
+  being wired into `tradex execute`'s entry-detection loop.
+- **Evidence-based promotion is a one-way ratchet, not a target to hit.**
+  No detector's live-trading eligibility (its presence in a
+  `Measured*Stats` table) is ever adjusted to reach a desired number —
+  not win rate, not trade frequency, not a round confirmation count. A
+  request to "get to 60%" or "fabricate a believable number" is refused
+  plainly, and the real, possibly disappointing number is reported
+  instead. This has happened explicitly in this project's history and
+  the refusal was the right call both times.
+- **Negative results are permanent, written-down knowledge, not dead
+  ends to quietly drop.** CRT, ICT/APA, Continuation, AMN,
+  StructureTrend, TriangleBreakout, carry, momentum (too thin a sample),
+  scalping, and confirmation-entry-on-mean-reversion are all recorded
+  with their specific failure mechanism so a future session doesn't
+  re-run the same experiment from zero. A new strategy proposal gets
+  checked against this list before any code gets written.
+- **A sizing/risk backstop can itself be the bug.** The margin-vs-notional
+  sizing fix (2026-11-13) is the canonical example: a safety check with
+  good intentions (catch a unit-conversion bug) was itself miscalibrated
+  and silently blocked every real signal on every leveraged instrument
+  since the risk system was built. Any safety/backstop check added to
+  this codebase should be sanity-checked against a REAL worked example
+  (real price, real account size, real leverage) before being trusted,
+  the same way a strategy's edge is — a backstop that's never fired on
+  real numbers is unverified in the same sense an untested strategy is.
+- **Two things measuring the same question must share one source of
+  data, not two independently-maintained copies.** `IsValidated` reading
+  directly from the `Measured*Stats` tables (rather than a second,
+  hand-written constant) exists specifically because the hand-written
+  version had already drifted stale by the time it was checked — this is
+  a recurring class of bug in this codebase (the dead `det.Name() !=
+  "ibs"` lowercase/uppercase mismatch is the same shape of problem:
+  two things that were supposed to agree, silently didn't, for the
+  entire life of the system until someone happened to check).
+- **A found edge gets re-verified on the EXACT venue it will trade on,
+  never assumed to transfer from a similar-looking source.** Binance
+  data is useful for discovering a crypto lead (that's how RSI2's crypto
+  edge was found at all) but is not itself sufficient grounds to trade —
+  ETHUSD confirmed on Binance's BTCUSDT/ETHUSDT and then failed on
+  Capital.com's own feed; BTCUSD was checked the same way and held up.
+  Same principle applied to real swap cost (XAGUSD, USDCAD/US30's
+  confluence bucket both flipped once real swap replaced an estimate)
+  and to margin/leverage (the backstop bug above). Nothing is trusted on
+  an approximation of the real mechanism when the real mechanism is
+  checkable.
+- **Autonomy is the default; fabrication is never the fallback.** This
+  operator has explicitly asked for autonomous decision-making without
+  being asked for permission on every step, including consequential
+  ones — but that license applies to legitimate methodology choices
+  (which instrument to test next, which code structure to use), never to
+  inventing a result, skipping a verification step, or declaring
+  something validated/safe ahead of the evidence. The two are not in
+  tension: autonomy decides HOW to find the real answer faster, not
+  WHETHER to report it honestly.
