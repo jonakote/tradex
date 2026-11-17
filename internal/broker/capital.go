@@ -193,6 +193,49 @@ func (c *Client) OpenPositions() ([]Position, error) {
 	return positions, nil
 }
 
+// ClosedFillLevel looks up the real fill price Capital.com recorded when
+// a position with this epic closed via its own broker-side stop or
+// take-profit (source "SL"/"TP" in the activity feed), rather than
+// through our own ClosePosition call. Used only by execute.go's reverse
+// reconciliation path (a locally-tracked position the broker no longer
+// has open) so the recorded pnl reflects the REAL fill, not an
+// approximation from the next available candle close -- found
+// 2026-11-17 on US30's first live stop-out: the candle-close
+// approximation happened to land on the opposite side of entry from the
+// real fill, turning a real ~$19.66 loss into a recorded ~$0.82 gain.
+// Returns ok=false if no matching activity is found in the lookback
+// window, so the caller can fall back to the old approximation.
+func (c *Client) ClosedFillLevel(epic string, since time.Time) (level float64, ok bool, err error) {
+	from := since.UTC().Format("2006-01-02T15:04:05")
+	to := time.Now().UTC().Format("2006-01-02T15:04:05")
+	var out struct {
+		Activities []struct {
+			Date    string `json:"date"`
+			Epic    string `json:"epic"`
+			Source  string `json:"source"`
+			Type    string `json:"type"`
+			Status  string `json:"status"`
+			Details struct {
+				Level float64 `json:"level"`
+			} `json:"details"`
+		} `json:"activities"`
+	}
+	path := fmt.Sprintf("/api/v1/history/activity?from=%s&to=%s&detailed=true", from, to)
+	if err := c.do("GET", path, nil, &out); err != nil {
+		return 0, false, err
+	}
+	// Walk newest-first; the first WORKING_ORDER EXECUTED with source
+	// SL/TP for this epic is the real stop/take-profit fill.
+	for i := len(out.Activities) - 1; i >= 0; i-- {
+		a := out.Activities[i]
+		if a.Epic == epic && a.Type == "WORKING_ORDER" && a.Status == "EXECUTED" &&
+			(a.Source == "SL" || a.Source == "TP") && a.Details.Level > 0 {
+			return a.Details.Level, true, nil
+		}
+	}
+	return 0, false, nil
+}
+
 // PlaceOrder opens a market position with a mandatory protective stop.
 // direction is "BUY" or "SELL". stopLevel is an absolute price, required —
 // this package will not place a position with no broker-side stop.

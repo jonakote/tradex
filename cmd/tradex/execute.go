@@ -346,6 +346,49 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 					MaxHoldBars: 10, LastBarSeen: time.Now().UTC(), OpenedAt: time.Now().UTC(),
 				}
 			}
+			// Reverse direction: a position we're LOCALLY tracking that
+			// the broker no longer has open at all -- almost always its
+			// own protective stop firing (closeAndRecord's own
+			// bro.ClosePosition call only runs when WE decide to exit;
+			// a stop/take-profit executes directly on Capital.com's side
+			// and never goes through that path). Found 2026-11-17: US30
+			// hit its stop at 50646.1 (entry 51582.5) while this process
+			// slept between scans -- the local record stayed "open"
+			// forever after that, since every future close attempt
+			// would also fail (ClosePosition on an already-closed deal
+			// errors out and closeAndRecord just logs and returns,
+			// permanently stuck). Detect it here instead: if a tracked
+			// dealId is missing from the broker's own position list,
+			// treat it as externally closed, record the real pnl from
+			// recent price history, and remove it so the symbol can
+			// trade again.
+			for symbol, t := range trades.Trades {
+				epic, _ := instrument.CapitalEpic(symbol)
+				if epic == "" {
+					epic = symbol
+				}
+				if p, found := byEpic[epic]; found && p.DealID == t.DealID {
+					continue // still genuinely open
+				}
+				fmt.Fprintf(stderr, "%s [execute:%s] RECONCILED a locally-tracked position no longer on the broker (dealId=%s) — likely its own stop/take-profit fired; recording the real close\n",
+					time.Now().UTC().Format(time.RFC3339), symbol, t.DealID)
+				exitPrice := t.EntryPrice
+				if lvl, ok, err := bro.ClosedFillLevel(epic, t.OpenedAt); err == nil && ok {
+					exitPrice = lvl // real stop/take-profit fill, preferred
+				} else if window, err := source.History(ctx, symbol, time.Now().UTC().Add(-3*timeframe), time.Now().UTC()); err == nil && len(window) > 0 {
+					spec, _ := instrument.Lookup(symbol)
+					exitPrice = spec.Price(int64(window[len(window)-1].Close)) // fallback approximation only
+				}
+				sign := 1.0
+				if t.Side == "sell" {
+					sign = -1.0
+				}
+				pnl := sign * (exitPrice - t.EntryPrice) * t.Size
+				risk.RecordClose(pnl)
+				logExec(map[string]any{"event": "close", "symbol": symbol, "deal_id": t.DealID, "side": t.Side,
+					"entry": t.EntryPrice, "exit": exitPrice, "size": t.Size, "pnl": pnl, "reason": "broker_closed_externally"})
+				delete(trades.Trades, symbol)
+			}
 			saveOpenTrades(openTradesPath, trades)
 		}
 
