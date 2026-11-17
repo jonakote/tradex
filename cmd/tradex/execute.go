@@ -60,6 +60,10 @@ var marginFactorPct = map[string]float64{
 	"EURGBP":   3.333333,
 	"GBPJPY":   3.333333,
 	"AUDUSD":   5,
+	// US shares: marginFactor 20% verified live via GET
+	// /api/v1/markets for all 14 on 2026-11-17 (identical across all).
+	"AAPL": 20, "MSFT": 20, "TSLA": 20, "NVDA": 20, "AMZN": 20, "META": 20,
+	"GOOGL": 20, "JPM": 20, "JNJ": 20, "XOM": 20, "WMT": 20, "V": 20, "KO": 20,
 }
 
 type openTrade struct {
@@ -285,6 +289,22 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 			for _, p := range positions {
 				byEpic[p.Epic] = p
 			}
+			// MarginPct must be a PERCENT OF EQUITY, same unit every other
+			// MarginPct in this file uses -- fetch balance up front so the
+			// reconciliation path can actually divide by it, rather than
+			// storing a raw dollar amount under a field named "percent"
+			// (found 2026-11-17: AAPL's reconciled MarginPct came out as
+			// 84.4 -- that's $84.40 of margin on a ~$1000 account, i.e.
+			// ~8.4%, not 84.4% -- and the stale comment claiming it gets
+			// "recomputed next loop anyway" was false: nothing ever
+			// corrected it, so committedMarginPct silently carried a 10x
+			// inflated number for as long as the position stayed open,
+			// which would have blocked legitimate new entries against the
+			// 25% margin cap for no real reason).
+			reconcileBalance := 0.0
+			if acct, err := bro.AccountSummary(); err == nil {
+				reconcileBalance = acct.Balance
+			}
 			for symbol := range marginFactorPct {
 				if _, tracked := trades.Trades[symbol]; tracked {
 					continue
@@ -304,9 +324,25 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 					side = "sell"
 				}
 				marginFactor := marginFactorPct[symbol]
+				marginPct := 0.0
+				if reconcileBalance > 0 {
+					marginPct = p.Size * p.Level * marginFactor / 100 / reconcileBalance * 100
+				}
 				trades.Trades[symbol] = openTrade{
 					Symbol: symbol, DealID: p.DealID, Side: side, EntryPrice: p.Level, Size: p.Size,
-					MarginPct: p.Size * p.Level * marginFactor / 100, // equity unknown here; recomputed next loop anyway
+					MarginPct: marginPct,
+					// HoldExitRule deliberately left empty here: which
+					// strategy actually fired this position is lost
+					// information by the time we're reconciling (the
+					// local openTrade record that would have carried it
+					// never got written). A reconciled position therefore
+					// only ever exits via MaxHoldBars or its broker-side
+					// stop, never the strategy's own measured
+					// reversion condition -- a real behavior difference
+					// from a normally-tracked trade, but a deliberate,
+					// understood one: guessing the wrong oscillator rule
+					// is worse than falling back to the simple, safe
+					// timeout.
 					MaxHoldBars: 10, LastBarSeen: time.Now().UTC(), OpenedAt: time.Now().UTC(),
 				}
 			}

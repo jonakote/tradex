@@ -579,3 +579,79 @@ this before re-deriving or accidentally reversing any of them:
   something validated/safe ahead of the evidence. The two are not in
   tension: autonomy decides HOW to find the real answer faster, not
   WHETHER to report it honestly.
+
+## Breadth round 6: US shares, a new asset class (2026-11-17)
+
+Extended IBS/RSI2/confluence to 14 individual US stocks (AAPL, MSFT,
+TSLA, NVDA, AMZN, META, GOOGL, JPM, JNJ, XOM, WMT, V, KO, PFE) — the
+first asset class beyond FX/metals/indices/energy/crypto. Same
+methodology and rigor: 6-year Capital.com daily feed (open==close
+defect rate checked, all under 2%), real swap (Capital.com applies one
+generic shares financing rate, 0.0222624%/day, identical across all
+14, not instrument-specific), both-halves split.
+
+**13 of 14 confirmed** — richer, more varied results than any prior
+breadth round:
+- **AAPL**: IBS, RSI2, AND confluence all three independently confirm.
+- **MSFT/NVDA/GOOGL**: RSI2 alone confirms; IBS alone does not;
+  confluence confirms even stronger (NVDA: RSI2 alone +100.44bp,
+  confluence +149.39bp — the largest edge measured in this project).
+- **AMZN/META**: IBS alone confirms; RSI2 alone does not; confluence
+  confirms stronger still.
+- **WMT**: NEITHER signal confirms alone; confluence rescues it (same
+  pattern as XAUUSD/GBPUSD/AUDUSD).
+- **TSLA/XOM/KO**: IBS alone only (RSI2 and confluence both flip).
+- **JNJ/V**: RSI2 alone only (IBS and confluence both flip).
+- **JPM**: IBS alone AND RSI2 alone BOTH confirm independently, but
+  their COMBINED confluence bucket flips negative (-12.31bp) — same
+  GBPJPY pattern. JPM trades both strategies, never combined.
+- **PFE**: nothing confirms anywhere, excluded entirely.
+
+**Deployed**: `docs/examples_watch_forward_daily_shares_v2.json` (all
+13 confirmed symbols, strategies `["ibs","rsi2"]`, long only). New
+`ClassShare`/`share()` helper in `internal/instrument`; epics equal the
+plain ticker for all 14 (verified via `GET /api/v1/markets`); marginFactor
+20% and the shares financing rate verified identical across all 14.
+
+### Two real bugs found deploying this, both from exposing the system to fractional sizes for the first time
+
+1. **`broker.PlaceOrder`'s position-match used exact float equality
+   (`p.Size == size`)** to resolve the real dealId after Capital.com's
+   `/confirms` endpoint (already known to return a wrong dealId — see
+   the broker-execution reference) — this worked by coincidence for
+   every FX/metal/index/crypto trade so far because their computed
+   sizes happened to round-trip through the API's JSON encoding
+   exactly. The very first share order (AAPL, size 1.2) exposed it: the
+   position genuinely opened, but the lookup never found it, so the
+   order was incorrectly reported as failed and left completely
+   untracked locally (though real and open on the broker). Fixed with
+   a `1e-6` tolerance comparison instead of exact equality. The
+   existing broker-reconciliation logic (built for crash recovery)
+   adopted the real orphaned position correctly once restarted on the
+   fixed binary — reconciliation existing for an unrelated reason is
+   what caught this cleanly rather than leaving a silent, permanently
+   orphaned position.
+2. **The reconciliation path's `MarginPct` was a raw dollar amount, not
+   a percent of equity** (`size * level * marginFactor / 100`, never
+   divided by account balance) — a stale comment claimed it would be
+   "recomputed next loop anyway," which was false; nothing ever
+   corrected it. For AAPL this produced `MarginPct: 84.4` (should have
+   been ~8.3%) sitting in `committedMarginPct` for as long as the
+   position stayed open (up to 10 days) — enough to silently block
+   essentially all other legitimate new entries against the 25% total-
+   margin cap, for a reason that had nothing to do with real risk.
+   Fixed by fetching account balance at the start of reconciliation and
+   dividing by it, same unit as every other `MarginPct` in the file;
+   the already-corrupted live value was corrected by hand in
+   `data/demo_open_trades.json` immediately upon discovery. A
+   reconciled position's `HoldExitRule` is deliberately left empty
+   (documented in code) rather than guessed — the originating
+   strategy is genuinely unrecoverable information by reconciliation
+   time, and a wrong guess is worse than falling back to the simple,
+   safe time-cap exit.
+
+**Live demo processes as of 2026-11-17**: `ibs_longonly_v2`,
+`rsi2_v2`, `confluence_both_v2`, `confluence_longonly_v2`,
+`standalone_v2`, `rsi2_btc_v2`, `shares_v2`. Seven processes, 29
+confirmed instruments across FX, metals, indices, energy, crypto, and
+US shares. Watchdog covers all seven.

@@ -82,6 +82,20 @@ var MeasuredIBSStats = map[string]IBSStats{
 	"COPPER": {WinRate: 0.664, AvgWinBps: 87.11, AvgLossBps: 131.63, Robust: true, Side: "long"},
 	"US30":   {WinRate: 0.605, AvgWinBps: 55.30, AvgLossBps: 62.99, Robust: true, Side: "long"},
 	"GBPJPY": {WinRate: 0.600, AvgWinBps: 35.09, AvgLossBps: 40.88, Robust: true, Side: "long"},
+	// US shares, breadth round 6 (2026-11-17), same methodology + real
+	// swap (Capital.com's generic shares financing rate, identical
+	// across all shares: 0.0222624%/day -> 2.226bps/day). AAPL/AMZN/META/
+	// XOM/KO/TSLA/JPM confirm IBS alone, both halves positive.
+	"AAPL": {WinRate: 0.562, AvgWinBps: 127.85, AvgLossBps: 144.14, Robust: true, Side: "long"},
+	"TSLA": {WinRate: 0.617, AvgWinBps: 241.41, AvgLossBps: 356.66, Robust: true, Side: "long"},
+	"AMZN": {WinRate: 0.625, AvgWinBps: 140.92, AvgLossBps: 181.08, Robust: true, Side: "long"},
+	"META": {WinRate: 0.631, AvgWinBps: 209.54, AvgLossBps: 159.53, Robust: true, Side: "long"},
+	// JPM confirms IBS alone AND RSI2 alone independently, but their
+	// COMBINED confluence bucket flips negative (-12.31bp) -- same
+	// GBPJPY pattern. JPM deliberately absent from every confluence set.
+	"JPM": {WinRate: 0.705, AvgWinBps: 132.39, AvgLossBps: 133.14, Robust: true, Side: "long"},
+	"XOM": {WinRate: 0.597, AvgWinBps: 161.95, AvgLossBps: 196.39, Robust: true, Side: "long"},
+	"KO":  {WinRate: 0.641, AvgWinBps: 105.35, AvgLossBps: 133.15, Robust: true, Side: "long"},
 }
 
 // MeasuredRSI2Stats: Connors' 2-period RSI mean-reversion, same v0.2
@@ -140,6 +154,20 @@ var MeasuredRSI2Stats = map[string]IBSStats{
 	"EURJPY": {WinRate: 0.605, AvgWinBps: 35.88, AvgLossBps: 38.34, Robust: true, Side: "long"},
 	"EURGBP": {WinRate: 0.573, AvgWinBps: 27.58, AvgLossBps: 26.96, Robust: true, Side: "long"},
 	"GBPJPY": {WinRate: 0.676, AvgWinBps: 33.21, AvgLossBps: 52.00, Robust: true, Side: "long"},
+	// US shares, breadth round 6 (2026-11-17): RSI2 alone confirms,
+	// both halves positive, with real swap included.
+	"MSFT": {WinRate: 0.669, AvgWinBps: 124.96, AvgLossBps: 128.53, Robust: true, Side: "long"},
+	"NVDA": {WinRate: 0.654, AvgWinBps: 259.26, AvgLossBps: 199.55, Robust: true, Side: "long"},
+	"GOOGL": {WinRate: 0.617, AvgWinBps: 117.64, AvgLossBps: 112.85, Robust: true, Side: "long"},
+	"JNJ":  {WinRate: 0.582, AvgWinBps: 118.70, AvgLossBps: 125.20, Robust: true, Side: "long"},
+	"V":    {WinRate: 0.629, AvgWinBps: 93.77, AvgLossBps: 132.42, Robust: true, Side: "long"},
+	// AAPL also confirms RSI2 alone (as well as IBS alone and
+	// confluence -- all three bucket independently, see
+	// MeasuredIBSStats/MeasuredConfluenceStats).
+	"AAPL": {WinRate: 0.615, AvgWinBps: 123.99, AvgLossBps: 157.31, Robust: true, Side: "long"},
+	// JPM confirms RSI2 alone too (see MeasuredIBSStats for the IBS
+	// side) -- confluence deliberately excluded for JPM, same reasoning.
+	"JPM": {WinRate: 0.632, AvgWinBps: 100.49, AvgLossBps: 142.02, Robust: true, Side: "long"},
 }
 
 // MeasuredConfluenceStats: a SEPARATE, stronger signal from IBS and RSI2
@@ -182,17 +210,43 @@ var MeasuredConfluenceStats = map[string]IBSStats{
 	"WTI":    {WinRate: 0.638, AvgWinBps: 174.05, AvgLossBps: 182.49, Robust: true, Side: "long"},
 	"COPPER": {WinRate: 0.756, AvgWinBps: 98.59, AvgLossBps: 243.68, Robust: true, Side: "long"},
 	"AUDUSD": {WinRate: 0.645, AvgWinBps: 34.17, AvgLossBps: 41.67, Robust: true, Side: "long"},
+	// US shares, breadth round 6 (2026-11-17), real swap included:
+	// AAPL -- IBS, RSI2, AND confluence all three independently confirm
+	// (the richest case measured yet). MSFT/NVDA/GOOGL -- RSI2 alone
+	// confirms, IBS alone does not, but agreement confirms even
+	// stronger (NVDA: RSI2 +100.44bp alone -> +149.39bp combined).
+	// AMZN/META -- IBS alone confirms, RSI2 alone does not, agreement
+	// confirms stronger still. WMT -- NEITHER signal confirms alone,
+	// confluence rescues it (same AUDUSD/XAUUSD/GBPUSD pattern).
+	"AAPL":  {WinRate: 0.607, AvgWinBps: 128.21, AvgLossBps: 158.05, Robust: true, Side: "long"},
+	"MSFT":  {WinRate: 0.615, AvgWinBps: 119.40, AvgLossBps: 113.87, Robust: true, Side: "long"},
+	"NVDA":  {WinRate: 0.716, AvgWinBps: 301.05, AvgLossBps: 232.21, Robust: true, Side: "long"},
+	"GOOGL": {WinRate: 0.642, AvgWinBps: 135.72, AvgLossBps: 166.88, Robust: true, Side: "long"},
+	"AMZN":  {WinRate: 0.636, AvgWinBps: 157.00, AvgLossBps: 189.05, Robust: true, Side: "long"},
+	"META":  {WinRate: 0.708, AvgWinBps: 180.89, AvgLossBps: 189.43, Robust: true, Side: "long"},
+	"WMT":   {WinRate: 0.609, AvgWinBps: 126.26, AvgLossBps: 105.58, Robust: true, Side: "long"},
 }
 
-// ConfluenceOnlySymbols: IBS and RSI2 are NOT individually confirmed here --
-// only trade when both fire on the same symbol, same day.
-var ConfluenceOnlySymbols = map[string]bool{"XAUUSD": true, "GBPUSD": true, "AUDUSD": true}
+// ConfluenceOnlySymbols: NEITHER IBS nor RSI2 confirms alone here -- only
+// trade when both fire on the same symbol, same day (an individual
+// fallback would have no valid stats entry to use anyway, but these are
+// explicitly excluded from Measured{IBS,RSI2}Stats so the case is
+// unreachable, not merely empty).
+var ConfluenceOnlySymbols = map[string]bool{"XAUUSD": true, "GBPUSD": true, "AUDUSD": true, "WMT": true}
 
-// ConfluenceBoostSymbols: IBS and RSI2 are ALREADY independently confirmed
-// here -- a single-signal day still trades normally at its own strategy's
-// size; confluence just gets a stronger, separately-measured size on top,
-// not a gate.
-var ConfluenceBoostSymbols = map[string]bool{"US100": true, "PLATINUM": true, "BRENT": true, "WTI": true, "COPPER": true}
+// ConfluenceBoostSymbols: AT LEAST ONE of IBS/RSI2 is already
+// independently confirmed here (not necessarily both -- BRENT/WTI/COPPER
+// and most of the shares below only have RSI2 or IBS alone, not both) --
+// a single-signal day still trades normally at its own confirmed
+// strategy's size; confluence just gets a stronger, separately-measured
+// size on top when both agree, not a gate. A symbol whose OTHER signal
+// isn't independently confirmed simply has no entry in that signal's
+// Measured*Stats table, so firing on it alone safely finds nothing and
+// skips -- no extra check needed here for that.
+var ConfluenceBoostSymbols = map[string]bool{
+	"US100": true, "PLATINUM": true, "BRENT": true, "WTI": true, "COPPER": true,
+	"AAPL": true, "MSFT": true, "NVDA": true, "GOOGL": true, "AMZN": true, "META": true,
+}
 
 const (
 	// MaxRiskPct is a hard ceiling applied after half-Kelly and the

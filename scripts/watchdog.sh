@@ -34,3 +34,4 @@ check_and_restart "docs/examples_watch_forward_daily_confluence_both_v2.json" "d
 check_and_restart "docs/examples_watch_forward_daily_confluence_longonly_v2.json" "data/execute_confluence_longonly_v2.log"
 check_and_restart "docs/examples_watch_forward_daily_standalone_v2.json" "data/execute_standalone_v2.log"
 check_and_restart "docs/examples_watch_forward_daily_rsi2_btc_v2.json" "data/execute_rsi2_btc_v2.log"
+check_and_restart "docs/examples_watch_forward_daily_shares_v2.json" "data/execute_shares_v2.log"

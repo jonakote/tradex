@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -234,12 +235,20 @@ func (c *Client) PlaceOrder(epic, direction string, size, stopLevel float64) (de
 		return "", 0, fmt.Errorf("broker: order rejected: %s (%s)", confirm.DealStatus, confirm.Reason)
 	}
 	// Resolve the real position dealId by matching, not by trusting the
-	// confirm's own dealId field.
+	// confirm's own dealId field. Size compared with a tolerance, not
+	// exact equality -- a fractional size (shares especially: 1.2, 0.1,
+	// etc.) can round-trip through the API's JSON encoding with a
+	// different float64 bit pattern than what we sent, so `==` can
+	// miss a real, correctly-opened position. Found 2026-11-17 on the
+	// very first share order (AAPL, size 1.2): the confirm showed the
+	// position really opened, but the exact-equality lookup never
+	// found it, and the order was incorrectly reported as failed.
+	const sizeTolerance = 1e-6
 	for i := 0; i < 3; i++ {
 		positions, err := c.OpenPositions()
 		if err == nil {
 			for _, p := range positions {
-				if p.Epic == epic && p.Direction == direction && p.Size == size {
+				if p.Epic == epic && p.Direction == direction && math.Abs(p.Size-size) < sizeTolerance {
 					return p.DealID, p.Level, nil
 				}
 			}

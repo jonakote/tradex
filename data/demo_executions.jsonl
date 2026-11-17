@@ -8,3 +8,5 @@
 {"at":"2026-11-17T00:24:32Z","deal_id":"00000000-73a1-c372-049e-1b1a0055311e","entry":1495.56,"event":"close","exit":1452.43,"pnl":13.801599999999963,"reason":"strategy_exit","side":"sell","size":0.32,"symbol":"PLATINUM"}
 {"at":"2026-11-17T00:24:33Z","deal_id":"00000000-72e2-1a87-049e-1b1a0055311e","entry":28256,"event":"close","exit":27233.1,"pnl":19.435100000000027,"reason":"strategy_exit","side":"sell","size":0.019,"symbol":"US100"}
 {"at":"2026-11-17T00:24:46Z","deal_id":"00000000-7403-e435-049e-1b1a0055311e","entry":51582.5,"event":"entry","margin_pct":5.2478346532927995,"risk_pct":2,"side":"buy","size":0.021,"stop":50646.2047351,"symbol":"US30"}
+{"at":"2026-11-17T17:36:10Z","error":"broker: order ACCEPTED (ref o_85d358d1-b97b-4291-a1ee-374f91455fd0) but the resulting position could not be found in OpenPositions — refusing to report success without a real dealId","event":"entry_failed","symbol":"AAPL"}
+{"at":"2026-11-17T17:36:15Z","deal_id":"00000000-740b-9506-049e-1b1a0055311e","entry":330.82,"event":"entry","margin_pct":9.90897498773909,"risk_pct":2,"side":"buy","size":1.5,"stop":323.28993092,"symbol":"JPM"}

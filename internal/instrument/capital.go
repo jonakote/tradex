@@ -72,6 +72,13 @@ var capitalEpics = map[string]string{
 	// 2-digit precision, marginFactor 50%.
 	"BTCUSD": "BTCUSD",
 	"ETHUSD": "ETHUSD",
+
+	// US shares -- epic equals the plain ticker for all 14, verified via
+	// GET /api/v1/markets?searchTerm=... on 2026-11-17.
+	"AAPL": "AAPL", "MSFT": "MSFT", "TSLA": "TSLA", "NVDA": "NVDA",
+	"AMZN": "AMZN", "META": "META", "GOOGL": "GOOGL", "JPM": "JPM",
+	"JNJ": "JNJ", "XOM": "XOM", "WMT": "WMT", "V": "V",
+	"KO": "KO", "PFE": "PFE",
 }
 
 // CapitalEpic returns the Capital.com epic for a symbol in any spelling. It

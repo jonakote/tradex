@@ -32,6 +32,7 @@ const (
 	ClassCrypto Class = "CRYPTO"
 	ClassEnergy Class = "ENERGY"
 	ClassIndex  Class = "INDEX"
+	ClassShare  Class = "SHARE"
 )
 
 // Spec is the verified quoting convention for one instrument.
@@ -100,6 +101,14 @@ func crypto(symbol string, digits int) Spec {
 		PriceScale: scaleFor(digits), PipSize: 0}
 }
 
+// share registers a Capital.com share (individual stock) CFD. All US
+// shares tested here quote to 2 decimal places (cents) and carry no pip
+// convention, same reasoning as crypto.
+func share(symbol string, digits int) Spec {
+	return Spec{Symbol: symbol, Class: ClassShare, Digits: digits,
+		PriceScale: scaleFor(digits), PipSize: 0}
+}
+
 func scaleFor(digits int) int64 {
 	scale := int64(1)
 	for i := 0; i < digits; i++ {
@@ -149,6 +158,18 @@ var registry = func() map[string]Spec {
 	specs = append(specs,
 		crypto("BTCUSD", 2),
 		crypto("ETHUSD", 2),
+	)
+
+	// US shares (individual stocks). digits=2 verified via GET
+	// /api/v1/markets on 2026-11-17 for all 14 -- same convention as
+	// crypto (no pip). marginFactor 20% and overnightFee verified
+	// identical across all 14 (Capital.com applies one generic shares
+	// financing formula, not instrument-specific rates).
+	specs = append(specs,
+		share("AAPL", 2), share("MSFT", 2), share("TSLA", 2), share("NVDA", 2),
+		share("AMZN", 2), share("META", 2), share("GOOGL", 2), share("JPM", 2),
+		share("JNJ", 2), share("XOM", 2), share("WMT", 2), share("V", 2),
+		share("KO", 2), share("PFE", 2),
 	)
 
 	// Energy and indices carry the conventions the repository already used
@@ -238,6 +259,10 @@ func MinDealSize(symbol string) float64 {
 		return 0.001
 	case "USDCAD", "AUDJPY", "EURJPY", "EURGBP", "GBPJPY", "AUDUSD":
 		return 100 // Capital.com FX sizing: value in the market's own POINTS unit
+	case "MSFT", "META":
+		return 0.01
+	case "AAPL", "TSLA", "NVDA", "AMZN", "GOOGL", "JPM", "JNJ", "XOM", "WMT", "V", "KO":
+		return 0.1
 	}
 	return 0
 }
