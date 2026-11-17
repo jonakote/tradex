@@ -1,0 +1,10 @@
+{"at":"2026-11-13T04:45:43Z","equity":999.98,"event":"entry_blocked","notional":540.5747,"reason":"notional backstop: computed size too large relative to equity","symbol":"US100"}
+{"at":"2026-11-13T05:58:18Z","equity":999.98,"event":"entry_blocked","notional":540.5747,"reason":"notional backstop: computed size too large relative to equity","symbol":"US100"}
+{"at":"2026-11-13T06:58:17Z","equity":999.98,"event":"entry_blocked","notional":540.5747,"reason":"notional backstop: computed size too large relative to equity","symbol":"US100"}
+{"at":"2026-11-13T07:58:17Z","equity":999.98,"event":"entry_blocked","notional":540.5747,"reason":"notional backstop: computed size too large relative to equity","symbol":"US100"}
+{"at":"2026-11-13T08:58:17Z","equity":999.98,"event":"entry_blocked","notional":540.5747,"reason":"notional backstop: computed size too large relative to equity","symbol":"US100"}
+{"at":"2026-11-13T10:02:32Z","deal_id":"00000000-72e2-1a87-049e-1b1a0055311e","entry":28256,"event":"entry","margin_pct":2.702927558551171,"risk_pct":2,"side":"sell","size":0.019,"stop":29451.9037697,"symbol":"US100"}
+{"at":"2026-11-16T00:24:26Z","deal_id":"00000000-73a1-c372-049e-1b1a0055311e","entry":1495.56,"event":"entry","margin_pct":4.7885181198421245,"risk_pct":2,"side":"sell","size":0.32,"stop":1562.82547788,"symbol":"PLATINUM"}
+{"at":"2026-11-17T00:24:32Z","deal_id":"00000000-73a1-c372-049e-1b1a0055311e","entry":1495.56,"event":"close","exit":1452.43,"pnl":13.801599999999963,"reason":"strategy_exit","side":"sell","size":0.32,"symbol":"PLATINUM"}
+{"at":"2026-11-17T00:24:33Z","deal_id":"00000000-72e2-1a87-049e-1b1a0055311e","entry":28256,"event":"close","exit":27233.1,"pnl":19.435100000000027,"reason":"strategy_exit","side":"sell","size":0.019,"symbol":"US100"}
+{"at":"2026-11-17T00:24:46Z","deal_id":"00000000-7403-e435-049e-1b1a0055311e","entry":51582.5,"event":"entry","margin_pct":5.2478346532927995,"risk_pct":2,"side":"buy","size":0.021,"stop":50646.2047351,"symbol":"US30"}

@@ -16,10 +16,18 @@ coverage.out
 /data/*.csv
 /data/*.jsonl
 /data/*.log
+/data/journal_archive.log
 /data/demo_open_trades.json
 /data/risk_state.json
 /data/KILL_SWITCH
 /data/demo_execute.lock
+
+# ...EXCEPT the real-trade/signal journals: these are the only durable
+# record of what the live system actually did, not reproducible from the
+# vendor the way candle CSVs are. Carved out of the blanket /data/*.jsonl
+# ignore above so they're committed and survive machine loss.
+!/data/demo_executions.jsonl
+!/data/forward_signals_daily_*.jsonl
 
 # Local configuration and secrets
 .env
