@@ -12,3 +12,11 @@
 {"at":"2026-11-17T17:36:15Z","deal_id":"00000000-740b-9506-049e-1b1a0055311e","entry":330.82,"event":"entry","margin_pct":9.90897498773909,"risk_pct":2,"side":"buy","size":1.5,"stop":323.28993092,"symbol":"JPM"}
 {"at":"2026-11-17T20:42:05Z","deal_id":"00000000-7403-e435-049e-1b1a0055311e","entry":51582.5,"event":"close","exit":50646.1,"pnl":-19.6641,"reason":"broker_closed_externally","side":"buy","size":0.021,"symbol":"US30","note":"corrected 2026-11-17: real stop fill per broker activity history (source SL) was 50646.1, not the 51621.7 candle approximation this process first recorded; code fixed to use ClosedFillLevel going forward"}
 {"at":"2026-11-17T20:42:25Z","deal_id":"00000000-7459-2836-049e-1b1a0055311e","entry":50731.4,"event":"entry","margin_pct":5.106862677205861,"risk_pct":2,"side":"buy","size":0.02,"stop":50646.2047351,"symbol":"US30"}
+{"at":"2026-11-17T21:44:12Z","deal_id":"00000000-7459-2836-049e-1b1a0055311e","entry":50731.4,"event":"close","exit":50646.2047351,"pnl":-1.703905298000027,"reason":"broker_closed_externally","side":"buy","size":0.02,"symbol":"US30"}
+{"at":"2026-11-17T21:44:35Z","deal_id":"00000000-7459-b2a9-049e-1b1a0055311e","entry":50740.4,"event":"entry","margin_pct":5.118204622294491,"risk_pct":2,"side":"buy","size":0.02,"stop":50646.2047351,"symbol":"US30"}
+{"at":"2026-11-18T00:44:22Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"US100"}
+{"at":"2026-11-18T00:44:46Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"MSFT"}
+{"at":"2026-11-18T00:44:51Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"KO"}
+{"at":"2026-11-18T01:44:21Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"US100"}
+{"at":"2026-11-18T01:44:46Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"MSFT"}
+{"at":"2026-11-18T01:44:51Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"KO"}
