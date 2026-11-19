@@ -68,7 +68,7 @@
 {"at":"2026-11-18T18:44:53Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"KO"}
 {"at":"2026-11-18T19:44:47Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"MSFT"}
 {"at":"2026-11-18T19:44:52Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"KO"}
-{"at":"2026-11-18T21:44:13Z","deal_id":"00000000-740b-9506-049e-1b1a0055311e","entry":330.82,"event":"close","exit":331.7,"pnl":1.3199999999999932,"reason":"broker_closed_externally","side":"buy","size":1.5,"symbol":"JPM"}
+{"at":"2026-11-18T21:44:13Z","deal_id":"00000000-740b-9506-049e-1b1a0055311e","entry":330.82,"event":"close","exit":323.28993092,"pnl":-11.295103619999963,"reason":"broker_closed_externally","side":"buy","size":1.5,"symbol":"JPM","note":"corrected 2026-11-19: real stop fill per broker activity history (source SL) was 323.28993092, not the 331.7 candle approximation this process first recorded; ClosedFillLevel's query window (since OpenedAt) silently failed Capital.com's ~24h date-range limit for a position held this long, so it fell through to the same wrong approximation path again -- code fixed to always use a fixed 20h lookback instead"}
 {"at":"2026-11-18T21:45:00Z","deal_id":"00000000-74d4-13ac-049e-1b1a0055311e","entry":507.66,"event":"entry","margin_pct":10.367141921507379,"risk_pct":2,"side":"buy","size":1.01,"stop":489.70997335000004,"symbol":"MSFT"}
 {"at":"2026-11-18T21:45:05Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"JPM"}
 {"at":"2026-11-18T21:45:10Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"KO"}
@@ -82,3 +82,18 @@
 {"at":"2026-11-19T01:44:49Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"JNJ"}
 {"at":"2026-11-19T01:44:50Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"XOM"}
 {"at":"2026-11-19T01:44:51Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"V"}
+{"at":"2026-11-19T02:44:49Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"JNJ"}
+{"at":"2026-11-19T02:44:50Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"XOM"}
+{"at":"2026-11-19T02:44:51Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"V"}
+{"at":"2026-11-19T03:44:49Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"JNJ"}
+{"at":"2026-11-19T03:44:50Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"XOM"}
+{"at":"2026-11-19T03:44:51Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"V"}
+{"at":"2026-11-19T04:44:49Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"JNJ"}
+{"at":"2026-11-19T04:44:50Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"XOM"}
+{"at":"2026-11-19T04:44:51Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"V"}
+{"at":"2026-11-19T05:44:49Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"JNJ"}
+{"at":"2026-11-19T05:44:50Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"XOM"}
+{"at":"2026-11-19T05:44:51Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"V"}
+{"at":"2026-11-19T06:22:13Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"JNJ"}
+{"at":"2026-11-19T06:22:14Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"XOM"}
+{"at":"2026-11-19T06:22:15Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"V"}

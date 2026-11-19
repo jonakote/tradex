@@ -205,8 +205,25 @@ func (c *Client) OpenPositions() ([]Position, error) {
 // real fill, turning a real ~$19.66 loss into a recorded ~$0.82 gain.
 // Returns ok=false if no matching activity is found in the lookback
 // window, so the caller can fall back to the old approximation.
+//
+// IMPORTANT: Capital.com's /history/activity endpoint rejects any
+// from/to span over roughly a day with errorCode "error.invalid.
+// daterange" (silently -- c.do returns no transport error, the body
+// just carries zero activities). Querying from the position's actual
+// OpenedAt therefore ALWAYS failed for anything held more than ~24h,
+// silently falling through to the same wrong candle approximation this
+// function exists to avoid. Found 2026-11-18 on JPM (held ~27h): real
+// stop fill was 323.29 (a real ~$11.30 loss), recorded as a +$1.32
+// gain. Fixed by always querying a fixed, safe 20h lookback ending now
+// instead of since->now -- reconciliation runs on every scan, so the
+// close we're looking for happened within the last scan interval
+// anyway, never days ago.
 func (c *Client) ClosedFillLevel(epic string, since time.Time) (level float64, ok bool, err error) {
-	from := since.UTC().Format("2006-01-02T15:04:05")
+	lookback := time.Now().UTC().Add(-20 * time.Hour)
+	if since.After(lookback) {
+		lookback = since.UTC()
+	}
+	from := lookback.Format("2006-01-02T15:04:05")
 	to := time.Now().UTC().Format("2006-01-02T15:04:05")
 	var out struct {
 		Activities []struct {
