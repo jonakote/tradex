@@ -257,7 +257,7 @@ func MinDealSize(symbol string) float64 {
 		return 10
 	case "US30":
 		return 0.001
-	case "USDCAD", "AUDJPY", "EURJPY", "EURGBP", "GBPJPY", "AUDUSD":
+	case "USDCAD", "AUDJPY", "EURJPY", "EURGBP", "GBPJPY", "AUDUSD", "AUDCAD":
 		return 100 // Capital.com FX sizing: value in the market's own POINTS unit
 	case "MSFT", "META":
 		return 0.01

@@ -162,3 +162,4 @@
 {"at":"2026-11-20T08:22:22Z","event":"entry_blocked","reason":"max total exposure would be exceeded","symbol":"JNJ"}
 {"at":"2026-11-20T09:03:54Z","deal_id":"00000000-7515-a6e5-049e-1b1a0055311e","entry":255.15,"event":"entry","margin_pct":3.6521244502229577,"risk_pct":1,"side":"buy","size":0.7000000000000001,"stop":242.86851031999998,"symbol":"AMZN"}
 {"at":"2026-11-20T09:03:56Z","event":"entry_blocked","reason":"max open positions reached","symbol":"JNJ"}
+{"at":"2026-11-20T09:17:56Z","event":"entry_blocked","reason":"max open positions reached","symbol":"JNJ"}

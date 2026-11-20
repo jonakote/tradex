@@ -60,6 +60,7 @@ var marginFactorPct = map[string]float64{
 	"EURGBP":   3.333333,
 	"GBPJPY":   3.333333,
 	"AUDUSD":   5,
+	"AUDCAD":   5,
 	// US shares: marginFactor 20% verified live via GET
 	// /api/v1/markets for all 14 on 2026-11-17 (identical across all).
 	"AAPL": 20, "MSFT": 20, "TSLA": 20, "NVDA": 20, "AMZN": 20, "META": 20,

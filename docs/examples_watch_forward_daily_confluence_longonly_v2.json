@@ -1,6 +1,6 @@
 {
   "capital": {
-    "symbols": ["XAUUSD", "GBPUSD", "BRENT", "WTI", "COPPER", "AUDUSD"],
+    "symbols": ["XAUUSD", "GBPUSD", "BRENT", "WTI", "COPPER", "AUDUSD", "AUDCAD"],
     "interval": "1d"
   },
   "strategies": ["ibs", "rsi2"],

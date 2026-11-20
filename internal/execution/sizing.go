@@ -168,6 +168,14 @@ var MeasuredRSI2Stats = map[string]IBSStats{
 	// JPM confirms RSI2 alone too (see MeasuredIBSStats for the IBS
 	// side) -- confluence deliberately excluded for JPM, same reasoning.
 	"JPM": {WinRate: 0.632, AvgWinBps: 100.49, AvgLossBps: 142.02, Robust: true, Side: "long"},
+	// AUDCAD, breadth round 7 (2026-11-20): found via a genuinely
+	// different model first (z-score mean reversion, both sides, no
+	// trend filter -- see docs/STRATEGY_SUITE.md), then confirmed to
+	// ALSO exist under the already-deployed RSI2 engine, cheaper to
+	// ship than a whole new strategy type for one symbol. IBS alone
+	// does NOT confirm here (sign flip) -- RSI2 alone does, real swap
+	// included (142 trades, both halves positive +3.3/+2.5bp).
+	"AUDCAD": {WinRate: 0.577, AvgWinBps: 30.36, AvgLossBps: 34.63, Robust: true, Side: "long"},
 }
 
 // MeasuredConfluenceStats: a SEPARATE, stronger signal from IBS and RSI2
@@ -225,6 +233,12 @@ var MeasuredConfluenceStats = map[string]IBSStats{
 	"AMZN":  {WinRate: 0.636, AvgWinBps: 157.00, AvgLossBps: 189.05, Robust: true, Side: "long"},
 	"META":  {WinRate: 0.708, AvgWinBps: 180.89, AvgLossBps: 189.43, Robust: true, Side: "long"},
 	"WMT":   {WinRate: 0.609, AvgWinBps: 126.26, AvgLossBps: 105.58, Robust: true, Side: "long"},
+	// AUDCAD, breadth round 7 (2026-11-20): RSI2 alone confirms (see
+	// MeasuredRSI2Stats), confluence confirms stronger still -- 51
+	// trades, thinner (~25-26/half, right at the floor like PLATINUM
+	// confluence was), both halves positive (+24.4/+21.9bp), real swap
+	// included.
+	"AUDCAD": {WinRate: 0.686, AvgWinBps: 43.55, AvgLossBps: 21.52, Robust: true, Side: "long"},
 }
 
 // ConfluenceOnlySymbols: NEITHER IBS nor RSI2 confirms alone here -- only
@@ -246,6 +260,7 @@ var ConfluenceOnlySymbols = map[string]bool{"XAUUSD": true, "GBPUSD": true, "AUD
 var ConfluenceBoostSymbols = map[string]bool{
 	"US100": true, "PLATINUM": true, "BRENT": true, "WTI": true, "COPPER": true,
 	"AAPL": true, "MSFT": true, "NVDA": true, "GOOGL": true, "AMZN": true, "META": true,
+	"AUDCAD": true,
 }
 
 const (

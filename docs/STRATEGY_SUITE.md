@@ -655,3 +655,61 @@ plain ticker for all 14 (verified via `GET /api/v1/markets`); marginFactor
 `standalone_v2`, `rsi2_btc_v2`, `shares_v2`. Seven processes, 29
 confirmed instruments across FX, metals, indices, energy, crypto, and
 US shares. Watchdog covers all seven.
+
+## Breadth round 7: AUDCAD, found via a genuinely different model (2026-11-20)
+
+User asked specifically to focus new research on forex/crypto, having
+checked and found that in days of live running, **zero real forex or
+crypto trades had fired at all** -- every real trade so far was
+metals/indices/shares/energy. Diagnosed why: EURUSD's long setup
+(uptrend + oversold IBS) hadn't fired in the cached sample in ~3
+months -- not a bug, a real regime effect. FX ranges rather than
+trends the way equities do, so the 200-day uptrend filter (built
+around equity behavior) is plausibly the wrong gate for FX specifically.
+
+Researched FX-specific mean-reversion literature (multiple sources):
+consistent recommendation is a z-score/band model applied to BOTH
+long and short sides, gated by a range-regime filter instead of a
+trend filter -- the opposite structure from what's deployed. Built
+and tested this (20-day rolling z-score, entry at |z|>=2, exit at
+z=0 or 10-day cap, both sides, no trend filter) on 8 FX pairs,
+including several named by the research as classically range-bound
+(EURCHF, EURNZD, EURAUD, AUDNZD, GBPCAD, AUDCAD) that tradex didn't
+trade yet:
+
+- 3 confirmed on a quick swap estimate: AUDCAD (+30.47bp), EURCHF
+  (+13.85bp), GBPCAD (+10.77bp).
+- Re-verified with REAL per-pair swap rates pulled live from
+  Capital.com (conservative: worst-case side) -- **caught 2 false
+  positives**, same lesson as XAGUSD/USDCAD/US30 before: EURCHF and
+  GBPCAD both flip negative in one half once real swap is included.
+  **Only AUDCAD survives** (257 trades -> both halves +19.0/+29.5bp,
+  n=297, well over the 30/half floor).
+
+Before building an entirely new strategy module for one symbol,
+checked whether AUDCAD's edge is ALSO reachable through the
+already-deployed IBS/RSI2/confluence engine -- cheaper to ship than a
+new detector type. It is: RSI2 alone confirms (142 trades, both
+halves positive +3.3/+2.5bp, thin but real), and confluence confirms
+much stronger (51 trades, thinner — right at the ~25/half floor like
+PLATINUM confluence was — both halves positive +24.4/+21.9bp). IBS
+alone does NOT confirm (sign flip). Deployed via the existing
+`ConfluenceBoostSymbols` mechanism, no new code path needed. Added to
+`docs/examples_watch_forward_daily_confluence_longonly_v2.json`.
+
+The z-score model itself was not deployed (no new detector/strategy
+type added) -- it served as the research tool that found a real,
+new FX instrument, which then turned out to be reachable through
+infrastructure that already exists and is already live-trading
+cleanly.
+
+**Also found and corrected while checking live state the same week**:
+US30 and JPM positions closed via their own broker-side stop while
+their process was asleep between scans, and the pnl recorded for both
+was initially WRONG -- see the `broker.ClosedFillLevel` history in
+this doc and the commit log (`f7db2ec`, `bac3053`) for the full
+story. Both corrected by hand with the real broker fill price.
+`MaxRiskPct` was also cut from 2.0 to 1.0 (commit `71f457b`) given the
+live track record is still only a handful of trades and 3 real
+infrastructure bugs were found in the same few days -- a fair reason
+to run smaller while the sample and the plumbing are both this young.
