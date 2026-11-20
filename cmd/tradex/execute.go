@@ -509,6 +509,26 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				if s := int64(quote.Ask - quote.Bid); s > 0 {
 					spreadTicks = s
 				}
+				// Real-time max-spread gate (intraday configs only --
+				// 0 means no gate, every existing config unaffected).
+				// Added 2026-11-20: the intraday IBS edge on EURUSD/
+				// GBPUSD is thin enough (+0.29bp/trade) that it flips
+				// negative once spread exceeds ~1bp (confirmed: robust
+				// at 0.64-0.99bp, negative at 1.64bp+) -- a snapshot
+				// taken once during backtesting is not a promise about
+				// what spread will actually be paid live, especially
+				// outside peak liquidity. Checking the REAL spread at
+				// the moment of each potential entry, not trusting any
+				// assumption, is the only honest way to run this.
+				if cfg.MaxSpreadBps > 0 && quote.Bid > 0 {
+					mid := (quote.Bid + quote.Ask) / 2
+					spreadBps := float64(quote.Ask-quote.Bid) / float64(mid) * 10000
+					if spreadBps > cfg.MaxSpreadBps {
+						logExec(map[string]any{"event": "entry_blocked", "symbol": symbol,
+							"reason": "real-time spread too wide for this edge", "spread_bps": spreadBps, "max_spread_bps": cfg.MaxSpreadBps})
+						continue
+					}
+				}
 			}
 			var ibsSetup, rsi2Setup, breakoutSetup scan.Setup
 			var ibsOK, rsi2OK, breakoutOK bool

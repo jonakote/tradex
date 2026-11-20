@@ -172,3 +172,5 @@
 {"at":"2026-11-20T13:32:50Z","event":"entry_blocked","reason":"max open positions reached","symbol":"JNJ"}
 {"at":"2026-11-20T13:32:55Z","deal_id":"00000000-7515-a6e5-049e-1b1a0055311e","entry":255.15,"event":"close","exit":251.01,"pnl":-2.898000000000011,"reason":"strategy_exit","side":"buy","size":0.7000000000000001,"symbol":"AMZN"}
 {"at":"2026-11-20T13:32:56Z","deal_id":"00000000-7511-9bdf-049e-1b1a0055311e","entry":3.6584,"event":"close","exit":3.6274,"pnl":-1.5499999999999847,"reason":"strategy_exit","side":"buy","size":50,"symbol":"NATGAS"}
+{"at":"2026-11-20T13:45:47Z","deal_id":"00000000-7515-eb61-049e-1b1a0055311e","entry":490.33,"event":"close","exit":485.15,"pnl":-2.9526000000000043,"reason":"strategy_exit","side":"buy","size":0.5700000000000001,"symbol":"MSFT"}
+{"at":"2026-11-20T13:45:49Z","event":"entry_blocked","max_spread_bps":0.8,"reason":"real-time spread too wide for this edge","spread_bps":0.9912767644726408,"symbol":"GBPUSD"}

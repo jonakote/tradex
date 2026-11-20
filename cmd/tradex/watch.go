@@ -75,6 +75,13 @@ type WatchConfig struct {
 	// existing daily-bar config is unaffected by this field's existence.
 	SessionStartHourUTC int `json:"session_start_hour_utc,omitempty"`
 	SessionEndHourUTC   int `json:"session_end_hour_utc,omitempty"`
+
+	// MaxSpreadBps, when non-zero, blocks a new entry if the live
+	// bid/ask spread exceeds this at the moment of the check -- see
+	// docs/STRATEGY_SUITE.md's intraday IBS section for why this
+	// matters: a thin edge's backtest cost assumption is not a promise
+	// about what spread will actually be paid live.
+	MaxSpreadBps float64 `json:"max_spread_bps,omitempty"`
 }
 
 // watchBlackout is the JSON form of notify.Blackout, durations as strings.
