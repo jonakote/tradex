@@ -174,3 +174,30 @@
 {"at":"2026-11-20T13:32:56Z","deal_id":"00000000-7511-9bdf-049e-1b1a0055311e","entry":3.6584,"event":"close","exit":3.6274,"pnl":-1.5499999999999847,"reason":"strategy_exit","side":"buy","size":50,"symbol":"NATGAS"}
 {"at":"2026-11-20T13:45:47Z","deal_id":"00000000-7515-eb61-049e-1b1a0055311e","entry":490.33,"event":"close","exit":485.15,"pnl":-2.9526000000000043,"reason":"strategy_exit","side":"buy","size":0.5700000000000001,"symbol":"MSFT"}
 {"at":"2026-11-20T13:45:49Z","event":"entry_blocked","max_spread_bps":0.8,"reason":"real-time spread too wide for this edge","spread_bps":0.9912767644726408,"symbol":"GBPUSD"}
+{"at":"2026-11-20T14:00:52Z","event":"entry_blocked","max_spread_bps":0.8,"reason":"real-time spread too wide for this edge","spread_bps":0.990838554290331,"symbol":"GBPUSD"}
+{"at":"2026-11-20T14:15:52Z","event":"entry_blocked","max_spread_bps":0.8,"reason":"real-time spread too wide for this edge","spread_bps":0.9914960149487092,"symbol":"GBPUSD"}
+{"at":"2026-11-20T14:30:52Z","event":"entry_blocked","max_spread_bps":0.8,"reason":"real-time spread too wide for this edge","spread_bps":0.9913447973462463,"symbol":"GBPUSD"}
+{"at":"2026-11-20T14:32:16Z","deal_id":"00000000-7518-bf30-049e-1b1a0055311e","entry":3.6304,"event":"entry","margin_pct":0.7445553030380236,"risk_pct":1,"side":"buy","size":20,"stop":3.2992298749,"symbol":"NATGAS"}
+{"at":"2026-11-20T14:32:57Z","deal_id":"00000000-7518-c2c3-049e-1b1a0055311e","entry":492.8,"event":"entry","margin_pct":5.782966214147189,"risk_pct":1,"side":"buy","size":0.5700000000000001,"stop":480.00266622000004,"symbol":"MSFT"}
+{"at":"2026-11-20T14:32:59Z","deal_id":"00000000-7518-c329-049e-1b1a0055311e","entry":253.25,"event":"entry","margin_pct":3.6699806063080533,"risk_pct":1,"side":"buy","size":0.7000000000000001,"stop":242.86851031999998,"symbol":"AMZN"}
+{"at":"2026-11-20T14:33:01Z","event":"entry_blocked","reason":"max open positions reached","symbol":"JNJ"}
+{"at":"2026-11-20T14:45:51Z","deal_id":"00000000-7518-c2c3-049e-1b1a0055311e","entry":492.8,"event":"close","exit":495.94,"pnl":1.7897999999999925,"reason":"strategy_exit","side":"buy","size":0.5700000000000001,"symbol":"MSFT"}
+{"at":"2026-11-20T14:45:53Z","deal_id":"00000000-7518-c329-049e-1b1a0055311e","entry":253.25,"event":"close","exit":254.34,"pnl":0.7630000000000025,"reason":"strategy_exit","side":"buy","size":0.7000000000000001,"symbol":"AMZN"}
+{"at":"2026-11-20T14:45:54Z","event":"entry_blocked","max_spread_bps":0.8,"reason":"real-time spread too wide for this edge","spread_bps":0.991730493424064,"symbol":"GBPUSD"}
+{"at":"2026-11-20T15:00:51Z","deal_id":"00000000-740b-94c7-049e-1b1a0055311e","entry":351.65,"event":"close","exit":349.84,"pnl":-2.172000000000003,"reason":"strategy_exit","side":"buy","size":1.2,"symbol":"AAPL"}
+{"at":"2026-11-20T15:00:52Z","deal_id":"00000000-7518-bf30-049e-1b1a0055311e","entry":3.6304,"event":"close","exit":3.6339,"pnl":0.07000000000000561,"reason":"strategy_exit","side":"buy","size":20,"symbol":"NATGAS"}
+{"at":"2026-11-20T15:00:53Z","event":"entry_blocked","max_spread_bps":0.8,"reason":"real-time spread too wide for this edge","spread_bps":0.9916851018384316,"symbol":"GBPUSD"}
+{"at":"2026-11-20T15:15:51Z","event":"entry_blocked","max_spread_bps":0.8,"reason":"real-time spread too wide for this edge","spread_bps":0.9911331701775653,"symbol":"GBPUSD"}
+{"at":"2026-11-20T15:30:52Z","event":"entry_blocked","max_spread_bps":0.8,"reason":"real-time spread too wide for this edge","spread_bps":0.9916018947223896,"symbol":"GBPUSD"}
+{"at":"2026-11-20T15:32:18Z","deal_id":"00000000-7519-fc9e-049e-1b1a0055311e","entry":3.6214,"event":"entry","margin_pct":0.7428443603900394,"risk_pct":1,"side":"buy","size":20,"stop":3.2992298749,"symbol":"NATGAS"}
+{"at":"2026-11-20T15:33:07Z","deal_id":"00000000-7519-ff1a-049e-1b1a0055311e","entry":495.66,"event":"entry","margin_pct":5.76150099150862,"risk_pct":1,"side":"buy","size":0.5700000000000001,"stop":480.00266622000004,"symbol":"MSFT"}
+{"at":"2026-11-20T15:33:11Z","deal_id":"00000000-751a-0110-049e-1b1a0055311e","entry":255.65,"event":"entry","margin_pct":3.656358366807342,"risk_pct":1,"side":"buy","size":0.7000000000000001,"stop":242.86851031999998,"symbol":"AMZN"}
+{"at":"2026-11-20T15:33:17Z","deal_id":"00000000-751a-01ac-049e-1b1a0055311e","entry":271.54,"event":"entry","margin_pct":4.876574973305538,"risk_pct":1,"side":"buy","size":0.9,"stop":256.40364040000003,"symbol":"JNJ"}
+{"at":"2026-11-20T15:45:53Z","deal_id":"00000000-7519-fc9e-049e-1b1a0055311e","entry":3.6214,"event":"close","exit":3.6269,"pnl":0.11000000000000121,"reason":"strategy_exit","side":"buy","size":20,"symbol":"NATGAS"}
+{"at":"2026-11-20T15:45:54Z","event":"entry_blocked","max_spread_bps":0.8,"reason":"real-time spread too wide for this edge","spread_bps":0.991193625862529,"symbol":"GBPUSD"}
+{"at":"2026-11-20T16:00:52Z","deal_id":"00000000-751a-01ac-049e-1b1a0055311e","entry":271.54,"event":"close","exit":271.53,"pnl":-0.009000000000042974,"reason":"strategy_exit","side":"buy","size":0.9,"symbol":"JNJ"}
+{"at":"2026-11-20T16:00:53Z","deal_id":"00000000-7519-ff1a-049e-1b1a0055311e","entry":495.66,"event":"close","exit":494.35,"pnl":-0.7467000000000014,"reason":"strategy_exit","side":"buy","size":0.5700000000000001,"symbol":"MSFT"}
+{"at":"2026-11-20T16:00:55Z","event":"entry_blocked","max_spread_bps":0.8,"reason":"real-time spread too wide for this edge","spread_bps":0.9922679428758978,"symbol":"GBPUSD"}
+{"at":"2026-11-20T16:14:42Z","deal_id":"00000000-751a-b11f-049e-1b1a0055311e","entry":3.6304,"event":"entry","margin_pct":0.7443049839031746,"risk_pct":1,"side":"buy","size":20,"stop":3.2992298749,"symbol":"NATGAS"}
+{"at":"2026-11-20T16:15:37Z","deal_id":"00000000-751a-b6b7-049e-1b1a0055311e","entry":494.2,"event":"entry","margin_pct":5.773595980800784,"risk_pct":1,"side":"buy","size":0.5700000000000001,"stop":480.00266622000004,"symbol":"MSFT"}
+{"at":"2026-11-20T16:15:43Z","deal_id":"00000000-751a-b731-049e-1b1a0055311e","entry":271.17,"event":"entry","margin_pct":4.886812257334734,"risk_pct":1,"side":"buy","size":0.9,"stop":256.40364040000003,"symbol":"JNJ"}

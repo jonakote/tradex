@@ -879,3 +879,115 @@ this without the code in front of them):
 
 **8 live demo processes now** (the 7 from before, plus this new
 intraday one) -- 31 confirmed instrument/strategy pairs total.
+
+## RETRACTION (2026-11-20, same day): the intraday IBS result above was invalid
+
+The section above was wrong, and it is kept in place (not deleted)
+specifically so this correction is visible next to the claim it
+corrects -- the project's own standing rule is that a result gets
+recorded, not erased, when it turns out to be wrong.
+
+**The bug**: the research backtest (`intraday_ibs_v4`) allowed a new
+pseudo-trade to start on EVERY qualifying bar, even while a previous
+one was conceptually still "open." That measures overlapping,
+independent forward-looking samples -- a legitimate thing to measure
+in the abstract, but NOT what the live system can actually do: `tradex
+execute` enforces exactly one open position per symbol
+(`trades.Trades[symbol]`), so once a position is open, every
+subsequent qualifying bar is a signal the live system physically
+cannot act on.
+
+**Caught by**: re-measuring the exact same parameters (entry<=300bps,
+exit>=9500bps, 48-bar hold) with a SEQUENTIAL backtest (skip ahead to
+the actual exit bar before considering a new entry, exactly matching
+what the live code does). Trade count dropped from 1299/1508 to
+662/735 -- the research had silently counted roughly double the
+trades the live system could ever take -- and the result **flipped**:
+EURUSD's first half went from +0.23bp to -0.10bp, GBPUSD's from
++0.19bp to -0.09bp. A full sequential grid search (entry 100-500bps x
+exit 8500-9700bps x hold 16-64 bars) found **zero** combinations that
+are both-halves-robust on both symbols. Intraday IBS on FX is
+REJECTED, not deployable as measured.
+
+**What was undone**: `MeasuredIBSStats["EURUSD"]` reverted to its
+original daily entry (WinRate 0.537, AvgWinBps 34.30, AvgLossBps
+34.28, long-only); EURUSD restored to
+`docs/examples_watch_forward_daily_ibs_longonly_v2.json`; the intraday
+config and its journal/log deleted; the live process (which had only
+been paused for an unrelated reason -- an unverified spread
+assumption, see below -- long enough for this deeper bug to surface
+first) never resumed. **No real demo trade was ever placed on the
+rejected strategy** -- the spread-gate pause bought exactly enough
+time for this to be caught first.
+
+**What was kept, because it's real, reusable infrastructure
+independent of this one rejected result**: the `-side=mid|bid|ask`
+candle flag, the IBS short-exit mirroring bug fix (still correct and
+still silently affecting nothing live, since every current "both
+sides" config uses the 5000 midpoint where mirroring is a no-op),
+`WatchConfig.SessionStartHourUTC/EndHourUTC`, `IBSStats.StopMultiplier`
++ `ProtectiveStopBps`'s multiplier parameter, and
+`WatchConfig.MaxSpreadBps` + the real-time spread gate in execute.go's
+entry loop. All of these cost nothing to keep (default to their old
+no-op behavior) and all were exercised correctly by this episode even
+though its conclusion was wrong.
+
+**The generalizable lesson** (also written into the `tradex-mcp`
+skill): any backtest for a strategy with a real one-position-per-
+symbol constraint must enforce that constraint SEQUENTIALLY during
+measurement, never evaluate overlapping/independent windows, or its
+trade count and edge are both inflated by counting opportunities the
+live system could never actually take. This is a different and
+separate check from the already-standing "verify real swap/spread"
+and "verify out-of-sample" rules -- it has to be checked explicitly on
+any new intraday/high-frequency strategy, since a daily-bar strategy's
+signal is rare enough that overlapping entries essentially never
+happen, which is exactly why this bug went unnoticed in every prior
+daily-bar measurement.
+
+## RSI2 intraday: a real edge found, explicitly NOT deployed (same day)
+
+Applying the corrected (sequential) methodology to RSI2 instead of
+IBS, on the same EURUSD/GBPUSD 15-min session-hours-gated setup,
+turned up something real but reported honestly as NOT YET
+TRUSTWORTHY rather than deployed, because it fails a different bar
+this project holds strategies to.
+
+**The numbers** (entry: RSI2<=1 extreme oversold / mirrored >=99
+overbought, exit: RSI2 crosses back to >=80/<=20, 32-bar/8h hold,
+100bp stop, real spread, session hours 07-21 UTC): EURUSD 182 trades,
+63.7% win, +1.36bp/trade (half1 +1.07, half2 +1.65); GBPUSD 197
+trades, 60.4% win, +1.19bp/trade (half1 +1.87, half2 +0.51). Both
+robust, both well above the 30-trades/half floor, and the edge is
+4-5x the size of the (now-rejected) IBS attempt.
+
+**Why it is NOT deployed despite clearing the robustness bar**: the
+entry threshold has NO stable neighborhood. Mapped the gradient
+finely (entry 0.5/1.0/1.5/2.0/2.5/3.0/4.0, same exit/hold): the edge
+decays smoothly and monotonically as the threshold loosens, and
+exactly one point (entry<=1) clears both-symbols-both-halves
+robustness -- entry=0.5 fails on GBPUSD (half1 -0.01, essentially
+zero), entry=1.5 already fails on GBPUSD (half1 -0.13), entry=2.0
+fails on both. This is a single-point optimum on a continuous curve,
+not a plateau -- exactly the kind of result this project's own
+Breakout-deployment precedent explicitly required NOT to have
+("parameter-insensitivity... is what justified deploying it; a result
+that only works at one specific window choice would be the curve-
+fitting this project forbids"). The exit threshold (70-98) and hold
+(8-64 bars) ARE both insensitive/stable once entry is fixed at 1 --
+only the entry cutoff itself is fragile.
+
+**Cost sensitivity, checked per the same-day standing instruction to
+verify approximations before concluding**: more resilient than the
+rejected IBS attempt -- EURUSD stays positive up to ~1.6bp spread
+(1.8 pips), GBPUSD flips around the same point. Still thinner margin
+than any daily strategy (27bp+ minimum elsewhere).
+
+**Status: real finding, parked, not traded.** Needs either (a) a
+longer data window to check if the entry=1 optimum is stable over
+more than one year, or (b) a structurally different formulation that
+doesn't depend on hitting one exact RSI2 value, before it clears the
+bar this project requires. Reporting this as "found something
+promising but not trustworthy yet" rather than quietly deploying it
+or quietly dropping it -- the honest state is exactly that: unresolved,
+documented, not live.

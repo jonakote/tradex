@@ -1,6 +1,6 @@
 {
   "capital": {
-    "symbols": ["NATGAS"],
+    "symbols": ["EURUSD", "NATGAS"],
     "interval": "1d"
   },
   "strategies": ["ibs"],
