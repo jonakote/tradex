@@ -253,7 +253,16 @@ const (
 	// stability discount, regardless of what the formula outputs — raw
 	// Kelly off a ~150-300 trade sample routinely suggests double-digit
 	// percentages that no real risk desk would run.
-	MaxRiskPct = 2.0
+	//
+	// Cut from 2.0 to 1.0 on 2026-11-20: live track record at that
+	// point was 7 real trades (net +$12.15 realized, but 3 live
+	// infrastructure bugs were found and fixed in the same few days --
+	// float-precision position matching, a margin-pct unit bug, and a
+	// broker date-range limit that corrupted recorded pnl twice). Not
+	// evidence the strategies are wrong, but good reason to run smaller
+	// while the live plumbing is this young and the sample this thin.
+	// Revisit once there's a real sample (~30 trades) to judge against.
+	MaxRiskPct = 1.0
 	// UnstableDiscount shrinks the suggested size for an instrument whose
 	// backtest halves disagree (Robust == false): still tradeable while
 	// collecting more live data, but at a fraction of the size a fully
