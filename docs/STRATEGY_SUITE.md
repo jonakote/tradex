@@ -713,3 +713,48 @@ story. Both corrected by hand with the real broker fill price.
 live track record is still only a handful of trades and 3 real
 infrastructure bugs were found in the same few days -- a fair reason
 to run smaller while the sample and the plumbing are both this young.
+
+## A genuinely different strategy family: trend-following Breakout (2026-11-20)
+
+User explicitly asked not to restrict the search to the existing
+IBS/RSI2/Confluence mean-reversion framework. Built and tested a
+classic turtle-style Donchian channel breakout: long when close
+breaks above the highest high of the preceding N bars, exit when
+close breaks below the lowest low of the preceding M bars (a trailing
+channel, recomputed every bar) or a time cap, whichever comes first.
+Deliberately the OPPOSITE structural bet from mean-reversion: low win
+rate, winners run far longer than losers -- the "legitimate" way to
+get a good payoff ratio, per the research done earlier this session on
+why high-win-rate systems are usually dangerous.
+
+Tested on Capital.com's own daily feed (BTCUSD, ETHUSD, EURUSD,
+XAUUSD, AUDCAD), real swap included:
+- **BTCUSD confirms strongly**: entry=10-bar high / exit=5-bar low,
+  63 trades, 33.3% win rate, avg win 1693.9bp / avg loss 684.5bp
+  (payoff ratio 2.47), expectancy +108.3bp/trade, both halves positive
+  (+118.9/+98.1bp). Robust across every parameter combination tried
+  (10/5, 15/7, 20/10, 10/10, 15/10, 20/20 all stayed both-halves-
+  positive) -- not a fitted fluke on one specific window choice.
+- XAUUSD also confirmed (+144.13bp both halves) but the sample is thin
+  (n=30, ~15/half) -- not deployed yet, flagged for a future re-check
+  with more data.
+- ETHUSD, EURUSD, AUDCAD all flipped sign between halves under this
+  model -- not deployed.
+
+Built as real new infrastructure, not just a config tweak:
+`internal/features/breakout.go` (pure `DonchianBreakoutLong`/
+`DonchianExitLong` functions), `scan.Breakout` detector
+(`internal/strategy/scan/detectors.go`), a new `"BREAKOUT"` case
+through execute.go's detector dispatch/sizing switch, and a
+`donchian_low_break` exit rule in the exit-management loop (handled
+specially because the exit channel is recomputed fresh from current
+history every scan, unlike IBS/RSI2's single-bar oscillator read).
+Position sizing reuses the exact same half-Kelly formula as IBS/RSI2 --
+Kelly only cares about win rate and payoff ratio, not which produced
+them -- so `MeasuredBreakoutStats` slots into the same
+`MeasuredIBSStats`-shaped table and `BreakoutRiskPct` helper as
+everything else. Deployed to BTCUSD alongside its existing RSI2
+config (`docs/examples_watch_forward_daily_rsi2_btc_v2.json`, now
+`strategies: ["rsi2", "breakout"]`) -- the two triggers are nearly
+mutually exclusive (oversold vs. new-high breakout) so real same-day
+conflicts should be rare.

@@ -434,7 +434,18 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 					exit = true
 				}
 			}
-			if !exit && t.HoldExitRule != "" && t.HoldExitRule != "confluence_strength_above" {
+			if !exit && t.HoldExitRule == "donchian_low_break" {
+				// Trailing-channel exit, recomputed fresh from current
+				// history every scan -- unlike the oscillator checks
+				// below which read a single bar's indicator value, this
+				// needs the whole window. HoldExitThresholdBps carries
+				// the exit-channel size (bars), not a bps threshold --
+				// see scan.Breakout.Detect's comment.
+				if features.DonchianExitLong(window, int(t.HoldExitThresholdBps)) {
+					exit = true
+				}
+			}
+			if !exit && t.HoldExitRule != "" && t.HoldExitRule != "confluence_strength_above" && t.HoldExitRule != "donchian_low_break" {
 				if osc, ok := currentOscillatorBps(t.HoldExitRule, window); ok {
 					if strings.HasSuffix(t.HoldExitRule, "_strength_above") && osc >= t.HoldExitThresholdBps {
 						exit = true
@@ -487,18 +498,21 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 					spreadTicks = s
 				}
 			}
-			var ibsSetup, rsi2Setup scan.Setup
-			var ibsOK, rsi2OK bool
+			var ibsSetup, rsi2Setup, breakoutSetup scan.Setup
+			var ibsOK, rsi2OK, breakoutOK bool
 			for _, det := range detectors {
 				name := strings.ToUpper(det.Name())
-				if (name != "IBS" && name != "RSI2") || len(window) < det.RequiredBars() {
+				if (name != "IBS" && name != "RSI2" && name != "BREAKOUT") || len(window) < det.RequiredBars() {
 					continue
 				}
 				if s, ok := det.Detect(spec, window, spreadTicks); ok {
-					if name == "IBS" {
+					switch name {
+					case "IBS":
 						ibsSetup, ibsOK = s, true
-					} else {
+					case "RSI2":
 						rsi2Setup, rsi2OK = s, true
+					case "BREAKOUT":
+						breakoutSetup, breakoutOK = s, true
 					}
 				}
 			}
@@ -524,6 +538,8 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				setup, found, matchedStrategy = ibsSetup, true, "IBS"
 			case rsi2OK:
 				setup, found, matchedStrategy = rsi2Setup, true, "RSI2"
+			case breakoutOK:
+				setup, found, matchedStrategy = breakoutSetup, true, "BREAKOUT"
 			}
 			if !found {
 				continue
@@ -569,6 +585,20 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				// strategy's threshold, not a single generic one — see
 				// currentOscillatorBps's "confluence_strength_above" case.
 				setup.HoldExitRule = "confluence_strength_above"
+			case "BREAKOUT":
+				s, haveStats := execution.MeasuredBreakoutStats[symbol]
+				if !haveStats {
+					continue
+				}
+				stats = s
+				var ok bool
+				riskPct, ok = execution.BreakoutRiskPct(symbol)
+				if !ok {
+					continue
+				}
+				// setup.HoldExitRule is already "donchian_low_break" from
+				// the detector itself -- left alone here, unlike
+				// CONFLUENCE above which overwrites it.
 			default:
 				continue
 			}
@@ -697,7 +727,8 @@ func tradeableSymbols(all []string) []string {
 		_, inIBS := execution.MeasuredIBSStats[s]
 		_, inRSI2 := execution.MeasuredRSI2Stats[s]
 		_, inConfluence := execution.MeasuredConfluenceStats[s]
-		if inIBS || inRSI2 || inConfluence {
+		_, inBreakout := execution.MeasuredBreakoutStats[s]
+		if inIBS || inRSI2 || inConfluence || inBreakout {
 			out = append(out, s)
 		}
 	}

@@ -306,3 +306,55 @@ func (c RSI2) Detect(_ instrument.Spec, window []domain.Candle, _ int64) (Setup,
 	}
 	return Setup{}, false
 }
+
+// Breakout is a trend-following Donchian-channel breakout: long when price
+// closes above the highest high of the preceding EntryWindow bars, exit
+// when it closes below the lowest low of the preceding ExitWindow bars
+// (a trailing channel, recomputed every bar) or MaxHoldBars, whichever
+// comes first. Deliberately the OPPOSITE structural bet from IBS/RSI2: low
+// win rate, winners run far longer than losers. Long only -- short was
+// never measured (see docs/STRATEGY_SUITE.md breadth round 7).
+type Breakout struct {
+	EntryWindow int
+	ExitWindow  int
+	MaxHoldBars int
+}
+
+func (c Breakout) Name() string { return "Breakout" }
+func (c Breakout) Spec() string { return features.BreakoutSpecVersion }
+func (c Breakout) Validated() bool {
+	return false // interface-level default only -- real per-symbol confirmation lives in execution.IsValidated("Breakout", symbol)
+}
+func (c Breakout) RequiredBars() int {
+	n := c.EntryWindow
+	if c.ExitWindow > n {
+		n = c.ExitWindow
+	}
+	return n + 1
+}
+
+func (c Breakout) Detect(_ instrument.Spec, window []domain.Candle, _ int64) (Setup, bool) {
+	if !features.DonchianBreakoutLong(window, c.EntryWindow) {
+		return Setup{}, false
+	}
+	last := window[len(window)-1]
+	maxHold := c.MaxHoldBars
+	if maxHold < 1 {
+		maxHold = 90
+	}
+	return Setup{
+		Side: "buy", EntryType: "MARKET", Entry: last.Close, HoldBars: maxHold,
+		DetectedAt: last.CloseTime,
+		Reason: fmt.Sprintf("close broke above the %d-bar high; trend-following long, trailing %d-bar channel exit (or %d-bar time cap)",
+			c.EntryWindow, c.ExitWindow, maxHold),
+		Diagnostics: map[string]any{"entry_window": c.EntryWindow, "exit_window": c.ExitWindow, "max_hold_bars": maxHold},
+		// HoldExitThresholdBps repurposed here to carry the exit window
+		// size (not a basis-point threshold) -- Breakout's exit is a
+		// channel recomputed from fresh history each scan, not a
+		// single-bar oscillator read, so execute.go's exit-management
+		// loop checks HoldExitRule == "donchian_low_break" as a special
+		// case rather than routing through currentOscillatorBps.
+		HoldExitRule:         "donchian_low_break",
+		HoldExitThresholdBps: int64(c.ExitWindow),
+	}, true
+}

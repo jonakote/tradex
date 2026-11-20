@@ -309,6 +309,38 @@ func ConfluenceRiskPct(symbol string) (float64, bool) {
 	return riskPct(MeasuredConfluenceStats, symbol)
 }
 
+// BreakoutRiskPct is the trend-following Breakout equivalent, same formula
+// and safeguards, against MeasuredBreakoutStats instead. The same
+// half-Kelly formula applies fine here even though the underlying bet is
+// structurally opposite to IBS/RSI2/Confluence (low win rate, high payoff
+// ratio, vs. the others' high win rate, modest payoff ratio) -- Kelly's
+// formula only cares about win rate and payoff ratio, not which produced
+// them.
+func BreakoutRiskPct(symbol string) (float64, bool) {
+	return riskPct(MeasuredBreakoutStats, symbol)
+}
+
+// MeasuredBreakoutStats: the trend-following Donchian breakout family
+// (internal/features/breakout.go), deliberately the opposite structural
+// bet from IBS/RSI2/Confluence -- low win rate, winners run far longer
+// than losers. Found 2026-11-20 specifically hunting for a genuinely
+// different (not mean-reversion) edge for forex/crypto per the user's
+// request not to restrict the search to the existing framework.
+//
+// BTCUSD on Capital.com's own daily feed, 2020-11 to 2026-11, entry=10-bar
+// high breakout / exit=5-bar low break or 90-bar cap, real swap included
+// (2.226bps/day, same rate as BTCUSD RSI2): 63 trades, 33.3% win rate,
+// avg win 1693.9bp / avg loss 684.5bp (payoff ratio 2.47), both halves
+// positive (+118.9bp / +98.1bp). Robust across every (entry,exit) window
+// combination tried (10/5, 15/7, 20/10, 10/10, 15/10, 20/20 all stayed
+// both-halves-positive) -- not a fitted fluke on one parameter choice.
+// EURUSD, XAUUSD, AUDCAD, ETHUSD were also tested under the same model:
+// XAUUSD confirmed too (+40.3/+248.0bp, n=30, thin) but EURUSD, AUDCAD
+// and ETHUSD all flipped sign between halves and are NOT deployed.
+var MeasuredBreakoutStats = map[string]IBSStats{
+	"BTCUSD": {WinRate: 0.333, AvgWinBps: 1693.9, AvgLossBps: 684.5, Robust: true, Side: "long"},
+}
+
 func riskPct(table map[string]IBSStats, symbol string) (float64, bool) {
 	stats, ok := table[symbol]
 	if !ok || stats.AvgLossBps <= 0 || stats.AvgWinBps <= 0 {

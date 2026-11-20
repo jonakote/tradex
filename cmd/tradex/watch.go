@@ -48,6 +48,15 @@ type WatchConfig struct {
 	RSI2TrendFilterBars int   `json:"rsi2_trend_filter_bars,omitempty"`
 	RSI2StrengthExitBps int64 `json:"rsi2_strength_exit_bps,omitempty"`
 
+	// Breakout parameters (used only when "breakout" is enabled). A
+	// trend-following Donchian channel signal, deliberately the opposite
+	// structural bet from IBS/RSI2 -- see
+	// internal/strategy/scan/detectors.go's Breakout and
+	// docs/STRATEGY_SUITE.md breadth round 7.
+	BreakoutEntryWindow int `json:"breakout_entry_window,omitempty"`
+	BreakoutExitWindow  int `json:"breakout_exit_window,omitempty"`
+	BreakoutMaxHoldBars int `json:"breakout_max_hold_bars,omitempty"`
+
 	PollInterval string            `json:"poll_interval,omitempty"`
 	Journal      string            `json:"journal,omitempty"`
 	Desktop      bool              `json:"desktop,omitempty"`
@@ -126,6 +135,16 @@ func buildDetectors(cfg WatchConfig) ([]scan.Detector, error) {
 			}
 			out = append(out, scan.RSI2{HoldBars: cfg.RSI2Hold, LongBelowBps: long, ShortAboveBps: cfg.RSI2ShortAboveBps,
 				TrendFilterBars: cfg.RSI2TrendFilterBars, StrengthExitBps: cfg.RSI2StrengthExitBps})
+		case "breakout":
+			entryWin := cfg.BreakoutEntryWindow
+			if entryWin == 0 {
+				entryWin = 10
+			}
+			exitWin := cfg.BreakoutExitWindow
+			if exitWin == 0 {
+				exitWin = 5
+			}
+			out = append(out, scan.Breakout{EntryWindow: entryWin, ExitWindow: exitWin, MaxHoldBars: cfg.BreakoutMaxHoldBars})
 		default:
 			return nil, fmt.Errorf("unknown strategy %q", name)
 		}
