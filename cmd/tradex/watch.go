@@ -66,6 +66,15 @@ type WatchConfig struct {
 	// Cooldowns are Go durations, e.g. "4h".
 	GroupCooldown  string `json:"group_cooldown,omitempty"`
 	SymbolCooldown string `json:"symbol_cooldown,omitempty"`
+
+	// SessionStartHourUTC/SessionEndHourUTC gate entries to active
+	// trading hours only (0-23, end exclusive), for intraday configs
+	// where thin-liquidity hours materially hurt an edge found during
+	// London/NY session hours (see docs/STRATEGY_SUITE.md's intraday
+	// IBS section). 0/0 (the zero value) means no gating -- every
+	// existing daily-bar config is unaffected by this field's existence.
+	SessionStartHourUTC int `json:"session_start_hour_utc,omitempty"`
+	SessionEndHourUTC   int `json:"session_end_hour_utc,omitempty"`
 }
 
 // watchBlackout is the JSON form of notify.Blackout, durations as strings.

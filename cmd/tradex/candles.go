@@ -24,9 +24,26 @@ import (
 // Prices are written as decimals at the instrument's verified precision, so
 // the file is readable and round-trips exactly through the same scale.
 func runCandles(args []string, stdout, stderr io.Writer) int {
+	// Optional trailing "-side=mid|bid|ask" flag, anywhere after the 5
+	// positional args. Defaults to bid (feed.CapitalConfig's own
+	// default) if omitted -- added 2026-11-20 while researching intraday
+	// strategies: bid-only candles are more exposed to bid-ask-bounce
+	// noise than mid candles for a signal like IBS that reads where the
+	// close sits inside the bar's own range, which matters much more at
+	// 5-15 minute resolution than it does on daily bars.
+	side := ""
+	var positional []string
+	for _, a := range args {
+		if strings.HasPrefix(a, "-side=") {
+			side = strings.TrimPrefix(a, "-side=")
+			continue
+		}
+		positional = append(positional, a)
+	}
+	args = positional
 	if len(args) < 5 {
 		fmt.Fprintln(stderr,
-			"usage: tradex candles <symbol> <interval> <from YYYY-MM-DD> <to YYYY-MM-DD> <out.csv>")
+			"usage: tradex candles <symbol> <interval> <from YYYY-MM-DD> <to YYYY-MM-DD> <out.csv> [-side=mid|bid|ask]")
 		return 2
 	}
 	symbol := instrument.Normalize(args[0])
@@ -52,6 +69,9 @@ func runCandles(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	if side == "" {
+		side = "bid"
+	}
 	source, err := feed.NewCapital(feed.CapitalConfig{
 		APIKey:     os.Getenv("CAPITAL_API_KEY"),
 		Identifier: os.Getenv("CAPITAL_IDENTIFIER"),
@@ -59,7 +79,7 @@ func runCandles(args []string, stdout, stderr io.Writer) int {
 		BaseURL:    os.Getenv("CAPITAL_BASE_URL"),
 		Symbols:    []string{symbol},
 		Interval:   interval,
-		Side:       "bid",
+		Side:       side,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "tradex candles: %v\n", err)

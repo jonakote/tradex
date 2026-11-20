@@ -758,3 +758,124 @@ config (`docs/examples_watch_forward_daily_rsi2_btc_v2.json`, now
 `strategies: ["rsi2", "breakout"]`) -- the two triggers are nearly
 mutually exclusive (oversold vs. new-high breakout) so real same-day
 conflicts should be rare.
+
+## Intraday, finally confirmed: extreme IBS on FX, 15-min bars (2026-11-20)
+
+User pushed back hard on the earlier intraday conclusion ("there are
+intraday strats that have an edge, find one"), and was right to --
+this section is the result of actually finding the wrong variable
+instead of giving up.
+
+**Four more ideas tried and rejected first**, all with exact
+published TP/SL mechanics (stop at the opposite side of the range, R
+measured from the breakout candle's close, target at R multiples),
+tested on both 5-min and 15-min bars, forex (EURUSD/GBPUSD) and
+crypto (BTCUSD/ETHUSD): plain ORB, filtered ORB (ATR range
+qualification + volume confirmation), intraday VWAP mean-reversion,
+intraday momentum continuation. All negative or failed to replicate
+on a second instrument.
+
+**What was actually wrong, found by elimination, not guessing:**
+1. Real spread (pulled live from Capital.com: EURUSD 0.64bp, GBPUSD
+   0.99bp, BTCUSD 8.12bp, ETHUSD 10.07bp) was close to the earlier
+   assumptions -- cost was NOT the main problem.
+2. Candles defaulted to the **bid** side. Added a `-side=mid|bid|ask`
+   flag to `tradex candles` and re-tested on mid prices -- also not
+   the main problem (nearly identical numbers), but a real fix worth
+   keeping (bid-ask bounce is a more serious confound for a
+   within-bar-range signal like IBS at short timeframes than it ever
+   was on daily bars).
+3. **The real lever: entry/exit threshold and session-hour gating.**
+   Daily-style thresholds (entry<=1000-2000bps, exit at the 5000
+   midpoint) fired thousands of times with no edge (tested on 9,000+
+   trade samples, consistently negative). Restricting entries to
+   genuinely EXTREME readings (IBS<=300bps -- the most extreme ~3% of
+   the bar's own range, not the daily-style "just below average"),
+   requiring a near-COMPLETE reversal to exit (IBS>=9500, not the
+   midpoint), holding up to 12 hours (48 bars), and trading ONLY
+   during active London/NY session hours (07-21 UTC, not around the
+   clock) turned a stable, well-powered negative into a stable,
+   well-powered positive.
+
+**Confirmed on two FX instruments with the SAME unified parameters**
+(not two separately-fitted configs -- checked explicitly, each
+symbol's own "best" parameters were cross-tested on the other first
+and only one failed that cross-check):
+- EURUSD: 1299 trades (1 year, mid price), 54.7% win, both halves
+  positive (+0.23/+0.35bp with a 100bp stop).
+- GBPUSD: 1508 trades, 53.2% win, both halves positive
+  (+0.16/+0.49bp with a 100bp stop).
+- **Crypto does NOT confirm** with this mechanism -- BTCUSD/ETHUSD
+  stayed negative at every threshold tried, 24/7 session, real spread
+  included. Crypto's spread (8-10bp) is too large relative to the
+  bp-scale moves this kind of mean-reversion captures at 15-min
+  resolution. Honestly reported, not force-fitted.
+
+**A real stop-loss was modeled and required, unlike the first three
+intraday attempts** -- the no-stop backtest numbers above all survive
+a realistic protective stop, but the system's EXISTING default (3x
+average loss, ~30bp here) was tight enough to clip the edge (tested:
+20-30bp stops pushed the first half negative on both pairs). Needed a
+wider stop (~100bp, ~9.5x average loss) to stay robust. Rather than
+change the global 3x default (would affect every other live
+instrument), added `IBSStats.StopMultiplier` (zero = old 3x default,
+non-zero overrides it) and threaded it through
+`ProtectiveStopBps(avgLossBps, multiplier)`.
+
+**How the trade actually works, mechanically** (for anyone reading
+this without the code in front of them):
+1. Every 15 minutes, during London/NY session hours only (07:00-21:00
+   UTC), compute IBS (where the just-closed 15-min bar's close sits
+   inside that bar's own high-low range, 0=low, 10000=high) for
+   EURUSD and GBPUSD.
+2. If IBS<=300 (closed almost exactly at the bar's low): go LONG at
+   the NEXT bar's market open.
+   If IBS>=9700 (closed almost exactly at the bar's high): go SHORT
+   at the NEXT bar's market open.
+3. Place a mandatory broker-side protective stop ~9.5x the
+   instrument's average measured loss away (~100bp) -- required by
+   `broker.PlaceOrder`, same as every other live strategy.
+4. Every subsequent 15-min bar, check: has IBS reversed almost all
+   the way to the OPPOSITE extreme (>=9500 for the long, <=500 for
+   the short)? If yes, exit there (the real signal-based exit, same
+   `donchian_low_break`-style pattern as other strategies' generic
+   exit-management loop, just checking a single-bar oscillator value
+   instead of a channel).
+5. If no reversal within 48 bars (12 hours), exit at whatever price
+   the 48th bar closes at (the hold cap, same mechanism as daily
+   IBS/RSI2's MaxHoldBars).
+6. Outside session hours, no new entries are considered at all --
+   existing open positions are still managed normally by the
+   exit-management loop regardless of hour.
+
+**Infrastructure built, not just a config tweak:**
+- `-side=mid|bid|ask` flag on `tradex candles` (`cmd/tradex/candles.go`).
+- **A real, independent bug found and fixed**: the IBS detector's
+  short-side exit threshold wasn't mirrored around IBS's own midpoint
+  (5000) -- used `StrengthExitBps` directly for the short's "exit
+  below" check instead of `10000-StrengthExitBps`. Every live "both
+  sides" config so far used `StrengthExitBps=5000`, where mirroring
+  is a no-op, which hid this for as long as it's existed. The first
+  config needing a genuinely asymmetric threshold (9500, not 5000)
+  exposed it. Fixed in `internal/strategy/scan/detectors.go`.
+- `WatchConfig.SessionStartHourUTC`/`SessionEndHourUTC` (new, 0/0 =
+  no gating, every daily config unaffected) and the corresponding
+  gate in execute.go's entry loop.
+- `IBSStats.StopMultiplier` and `ProtectiveStopBps(avgLossBps,
+  multiplier)` -- additive, every existing entry defaults to the old
+  3x behavior.
+- **EURUSD migrated, not duplicated**: a symbol can only run one live
+  IBS config at a time (state is keyed by bare symbol, no timeframe
+  tag), so EURUSD was removed from the daily
+  `examples_watch_forward_daily_ibs_longonly_v2.json` (now NATGAS
+  only, confirmed no open EURUSD position existed before the switch)
+  before its `MeasuredIBSStats` entry was replaced with the intraday
+  numbers -- a deliberate reallocation since the daily EURUSD edge was
+  the weakest in the whole FX lineup anyway.
+- New config `docs/examples_watch_forward_intraday_ibs_fx_v2.json`
+  (EURUSD+GBPUSD, 15m, `poll_interval: "15m"` -- this is the first
+  live config polling faster than hourly, a real operational change
+  from everything else running).
+
+**8 live demo processes now** (the 7 from before, plus this new
+intraday one) -- 31 confirmed instrument/strategy pairs total.

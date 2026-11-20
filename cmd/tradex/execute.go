@@ -477,6 +477,18 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 			if ctx.Err() != nil {
 				return
 			}
+			// Session-hour gate (intraday configs only -- 0/0 means no
+			// gating, so every daily-bar config is unaffected). Checked
+			// before anything else since it's the cheapest possible
+			// filter and the whole reason it exists: an edge measured
+			// only during active London/NY hours degrades badly outside
+			// them (see docs/STRATEGY_SUITE.md's intraday IBS section).
+			if cfg.SessionStartHourUTC != 0 || cfg.SessionEndHourUTC != 0 {
+				h := time.Now().UTC().Hour()
+				if h < cfg.SessionStartHourUTC || h >= cfg.SessionEndHourUTC {
+					continue
+				}
+			}
 			if _, open := trades.Trades[symbol]; open {
 				continue
 			}
@@ -603,7 +615,7 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				continue
 			}
 			entryPrice := spec.Price(int64(setup.Entry))
-			stopDistPrice := entryPrice * execution.ProtectiveStopBps(stats.AvgLossBps) / 10000
+			stopDistPrice := entryPrice * execution.ProtectiveStopBps(stats.AvgLossBps, stats.StopMultiplier) / 10000
 			minDeal := instrument.MinDealSize(symbol)
 			size := execution.SizeToStop(acct.Balance, riskPct, stopDistPrice, minDeal)
 			if size <= 0 {

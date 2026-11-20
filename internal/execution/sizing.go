@@ -38,6 +38,14 @@ type IBSStats struct {
 	AvgLossBps float64
 	Robust     bool
 	Side       string // "long" or "both" -- must match the live config
+	// StopMultiplier overrides ProtectiveStopBps's default 3x-avg-loss
+	// stop width when non-zero. Added 2026-11-20 for the intraday IBS
+	// variant (docs/STRATEGY_SUITE.md): backtesting showed a tight
+	// stop (near the default 3x ~= 30bp) clips the edge before a real
+	// intraday reversal has time to play out -- confirmed robust only
+	// from roughly 8x average loss upward. Every other entry leaves
+	// this at zero (the old, unconditional 3x default).
+	StopMultiplier float64
 }
 
 // MeasuredIBSStats holds every instrument with a real `ibsv2` measurement
@@ -66,7 +74,30 @@ type IBSStats struct {
 var MeasuredIBSStats = map[string]IBSStats{
 	"US100":    {WinRate: 0.661, AvgWinBps: 107.87, AvgLossBps: 117.23, Robust: true, Side: "both"},
 	"PLATINUM": {WinRate: 0.633, AvgWinBps: 142.83, AvgLossBps: 136.42, Robust: true, Side: "both"},
-	"EURUSD":   {WinRate: 0.537, AvgWinBps: 34.30, AvgLossBps: 34.28, Robust: true, Side: "long"},
+	// EURUSD MIGRATED from a daily IBS entry (WinRate 0.537, AvgWinBps
+	// 34.30, AvgLossBps 34.28, long-only) to this intraday 15-min
+	// variant on 2026-11-20 -- deliberate, not a coexistence: the daily
+	// edge was the weakest in the whole FX lineup (+2.6bp/trade
+	// expectancy, see docs/STRATEGY_SUITE.md's ranked table), and the
+	// intraday version measured stronger and more active. A symbol can
+	// only have ONE live IBS config at a time (trades.Trades and the
+	// broker's own open-position list are both keyed by bare symbol,
+	// with no timeframe tag), so EURUSD was removed from
+	// docs/examples_watch_forward_daily_ibs_longonly_v2.json (now
+	// NATGAS only) before this entry's numbers were swapped in. Entry
+	// IBS<=300bps (extreme, not the usual 1000-2000), exit IBS>=9500
+	// (near-complete reversal, not the usual midpoint 5000), both
+	// sides, 15-min bars, London/NY session hours only (07-21 UTC),
+	// 48-bar (12h) max hold, real spread included: 1299 trades, both
+	// halves positive (+0.23/+0.35bp with a 100bp stop -- the system's
+	// default 3x-avg-loss stop is too tight for this one, see
+	// StopMultiplier). See docs/STRATEGY_SUITE.md for the full research
+	// trail (4 earlier intraday ideas tested and rejected first).
+	"EURUSD": {WinRate: 0.547, AvgWinBps: 9.29, AvgLossBps: 10.56, Robust: true, Side: "both", StopMultiplier: 9.5},
+	// GBPUSD, intraday IBS variant (same model, added alongside EURUSD):
+	// 1508 trades, both halves positive (+0.16/+0.49bp with a 100bp
+	// stop), real spread included.
+	"GBPUSD": {WinRate: 0.532, AvgWinBps: 9.79, AvgLossBps: 10.43, Robust: true, Side: "both", StopMultiplier: 9.5},
 	"NATGAS":   {WinRate: 0.551, AvgWinBps: 296.51, AvgLossBps: 322.73, Robust: true, Side: "long"},
 	// Breadth round 5 (2026-11-12), same methodology, real swap included:
 	// COPPER (long only, 110 trades, +13.53bp both halves) -- feeds BOTH

@@ -1,0 +1,20 @@
+{
+  "capital": {
+    "symbols": ["EURUSD", "GBPUSD"],
+    "interval": "15m"
+  },
+  "strategies": ["ibs"],
+  "ibs_hold": 48,
+  "ibs_long_below_bps": 300,
+  "ibs_short_above_bps": 9700,
+  "ibs_trend_filter_bars": 0,
+  "ibs_strength_exit_bps": 9500,
+  "session_start_hour_utc": 7,
+  "session_end_hour_utc": 21,
+  "poll_interval": "15m",
+  "journal": "data/forward_signals_intraday_ibs_fx_v2.jsonl",
+  "desktop": false,
+  "telegram": true,
+  "symbol_cooldown": "1h",
+  "group_cooldown": "1h"
+}

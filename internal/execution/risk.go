@@ -180,9 +180,17 @@ func SizeToStop(equity, riskPct, stopDistancePrice, minDealSize float64) float64
 // instrument's measured average loss) so it essentially never fires under
 // normal conditions and only protects against a genuine tail event (gap,
 // feed outage, flash move) the backtest never modeled either.
-func ProtectiveStopBps(avgLossBps float64) float64 {
+//
+// multiplier overrides the default 3x when non-zero -- added 2026-11-20
+// for the intraday IBS variant, where a 3x stop was tight enough to clip
+// the edge before a real reversal plays out (see
+// execution.IBSStats.StopMultiplier and docs/STRATEGY_SUITE.md).
+func ProtectiveStopBps(avgLossBps float64, multiplier float64) float64 {
 	if avgLossBps <= 0 {
 		return 0
 	}
-	return avgLossBps * 3
+	if multiplier <= 0 {
+		multiplier = 3
+	}
+	return avgLossBps * multiplier
 }

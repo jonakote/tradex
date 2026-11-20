@@ -222,8 +222,21 @@ func (c IBS) Detect(_ instrument.Spec, window []domain.Candle, _ int64) (Setup, 
 			Reason:      fmt.Sprintf("IBS %d bps (close near high), trend-filtered; mean-reversion short, exit in up to %d bars", ibs, hold),
 			Diagnostics: map[string]any{"ibs_bps": ibs, "hold_bars": hold, "trend_filter_bars": c.TrendFilterBars}}
 		if c.StrengthExitBps > 0 {
+			// Mirrored around IBS's own midpoint (5000): a long exits
+			// when IBS rises ABOVE StrengthExitBps, so symmetrically a
+			// short must exit when IBS falls BELOW (10000-StrengthExitBps),
+			// not below StrengthExitBps itself. Every live "both sides"
+			// config so far used StrengthExitBps=5000, where this
+			// mirroring is a no-op (10000-5000=5000), which hid this bug:
+			// using the UNMIRRORED value directly meant a short with any
+			// StrengthExitBps far from 5000 (e.g. 9500, needed for the
+			// intraday extreme-reversal variant) would trigger its
+			// "exit below threshold" check almost immediately on the next
+			// bar, since nearly every IBS reading is below 9500. Found
+			// 2026-11-20 building the first config that needed a non-5000
+			// threshold. See docs/STRATEGY_SUITE.md.
 			setup.HoldExitRule = "ibs_strength_below"
-			setup.HoldExitThresholdBps = c.StrengthExitBps
+			setup.HoldExitThresholdBps = 10000 - c.StrengthExitBps
 		}
 		return setup, true
 	}
