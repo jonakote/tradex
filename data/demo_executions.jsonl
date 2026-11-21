@@ -201,3 +201,7 @@
 {"at":"2026-11-20T16:14:42Z","deal_id":"00000000-751a-b11f-049e-1b1a0055311e","entry":3.6304,"event":"entry","margin_pct":0.7443049839031746,"risk_pct":1,"side":"buy","size":20,"stop":3.2992298749,"symbol":"NATGAS"}
 {"at":"2026-11-20T16:15:37Z","deal_id":"00000000-751a-b6b7-049e-1b1a0055311e","entry":494.2,"event":"entry","margin_pct":5.773595980800784,"risk_pct":1,"side":"buy","size":0.5700000000000001,"stop":480.00266622000004,"symbol":"MSFT"}
 {"at":"2026-11-20T16:15:43Z","deal_id":"00000000-751a-b731-049e-1b1a0055311e","entry":271.17,"event":"entry","margin_pct":4.886812257334734,"risk_pct":1,"side":"buy","size":0.9,"stop":256.40364040000003,"symbol":"JNJ"}
+{"at":"2026-11-21T00:15:50Z","event":"entry_blocked","reason":"max open positions reached","symbol":"AAPL"}
+{"at":"2026-11-21T00:15:54Z","event":"entry_blocked","reason":"max open positions reached","symbol":"V"}
+{"at":"2026-11-21T01:15:50Z","event":"entry_blocked","reason":"max open positions reached","symbol":"AAPL"}
+{"at":"2026-11-21T01:15:54Z","event":"entry_blocked","reason":"max open positions reached","symbol":"V"}
