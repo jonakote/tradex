@@ -72,6 +72,13 @@ var capitalEpics = map[string]string{
 	// 2-digit precision, marginFactor 50%.
 	"BTCUSD": "BTCUSD",
 	"ETHUSD": "ETHUSD",
+	"XRPUSD": "XRPUSD",
+	"SOLUSD": "SOLUSD",
+	"ADAUSD": "ADAUSD",
+	"DOGEUSD": "DOGEUSD",
+	"LTCUSD": "LTCUSD",
+	"DOTUSD": "DOTUSD",
+	"AVAXUSD": "AVAXUSD",
 
 	// US shares -- epic equals the plain ticker for all 14, verified via
 	// GET /api/v1/markets?searchTerm=... on 2026-11-17.

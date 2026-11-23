@@ -1050,3 +1050,62 @@ that stop-outs will stop happening -- RSI2's entries will still
 sometimes be wrong and still sometimes get stopped; the claim is only
 that, on the evidence gathered, a wider stop should make the overall
 expectancy better than it already measures to be.
+
+## Breadth round 8: more crypto, because high-volatility already carries this project's biggest edges (2026-11-23)
+
+Asked "what about high volatility markets" led to actually checking
+the existing confirmed book rather than speculating: averaging
+measured expectancy by rough volatility class across every live
+strategy/symbol showed HIGH-VOL instruments (metals, crypto, growth
+stocks) at **+51bp/trade average**, mid-cap shares at +27bp, and FX
+majors/crosses at only **+7bp**. This wasn't new research, it was
+already sitting in `MeasuredIBSStats`/`MeasuredRSI2Stats` -- the
+breadth effort had been adding a lot of thin-edge FX crosses (the
+standing "FX/crypto first" priority) while the highest-value
+unexplored territory was more high-volatility names, specifically
+more crypto, where only BTCUSD/ETHUSD had ever been tried.
+
+**Checked what Capital.com actually offers** (never assumed): XRPUSD,
+SOLUSD, ADAUSD, DOGEUSD, LTCUSD, DOTUSD, AVAXUSD, all verified live
+(precision via `GET /api/v1/markets/{epic}`, not guessed from the
+symbol -- decimalPlaces ranged from 2 (LTCUSD) to 7 (DOGEUSD)).
+marginFactor 50% and the generic crypto financing rate
+(-0.0616438%/day = 6.16bps/day) identical across all 7, matching
+BTCUSD/ETHUSD exactly.
+
+**Measured honestly against the real bar, not a loosened one for
+crypto**: IBS, RSI2, and Donchian breakout tested on all 7, real
+swap included, 6-year daily history. Only 2 clear **>=30 trades/half,
+both halves positive**: SOLUSD IBS (118 trades, 58.5% win, +50.3bp
+average, half1 +76.0/half2 +24.7) and DOGEUSD IBS (77 trades, 59.7%
+win, +32.5bp average, half1 +29.3/half2 +35.6). Several others looked
+very attractive on paper -- XRPUSD RSI2 +99.9bp, ADAUSD RSI2
++290.4bp, AVAXUSD RSI2 +140.4bp -- but every one of those had only
+14-19 trades per half, well under the 30-trade bar, and are explicitly
+NOT deployed despite the tempting headline numbers. Breakout looked
+attractive on several too (XRPUSD +515bp, SOLUSD +955bp, AVAXUSD
++557bp) but none cleared 30/half either -- breakout signals are too
+rare over the available crypto history to trust yet. LTCUSD, DOTUSD,
+and the remaining buckets rejected outright (negative or
+sign-flipping).
+
+**What shipped**: SOLUSD and DOGEUSD added to `MeasuredIBSStats` with
+`StopMultiplier: 4` (same crypto-specific reasoning as BTCUSD's
+RSI2/Breakout entries -- bigger moves need more room before the stop
+fires). New `internal/instrument.crypto()` registrations for all 7
+tested symbols (not just the 2 that confirmed -- the specs are
+harmless to register even for symbols with no measured entry, since
+`tradeableSymbols()` gates on the stats table, not the instrument
+registry) and epic mappings in `capital.go`. New live config
+`docs/examples_watch_forward_daily_crypto_v2.json` (SOLUSD+DOGEUSD,
+daily IBS) -- **8 live demo processes now**, 33 confirmed
+instrument/strategy pairs total.
+
+**What this confirms about the "what can we do to improve our
+outcome" question more broadly**: the single highest-value lever
+right now isn't a new strategy TYPE, a parameter tweak, or risk
+sizing (all already addressed) -- it's directing breadth search
+toward the asset classes that are ALREADY measured to produce the
+biggest edges, instead of defaulting to "FX/crypto" as one
+undifferentiated priority when the two have wildly different
+measured expectancy.

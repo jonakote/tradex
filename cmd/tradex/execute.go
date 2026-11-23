@@ -49,6 +49,8 @@ var marginFactorPct = map[string]float64{
 	"XAUUSD":   5,
 	"GBPUSD":   3.333333,
 	"BTCUSD":   50,
+	"SOLUSD":   50,
+	"DOGEUSD":  50,
 	"J225":     5,
 	"WTI":      10,
 	"BRENT":    10,
@@ -233,7 +235,7 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "  instruments  %v @ %s\n", source.Symbols(), source.Interval())
 	fmt.Fprintf(stdout, "  tradeable    %v (only symbols with a measured size entry)\n", tradeableSymbols(source.Symbols()))
 	fmt.Fprintln(stdout, "  every order carries a mandatory broker-side protective stop")
-	fmt.Fprintln(stdout, "  risk: 2% max per trade, 4 max open positions, 25% max margin, 5%/9% soft/hard daily loss cap")
+	fmt.Fprintln(stdout, "  risk: 1% max per trade, 4 max open positions, 25% max margin, 5%/9% soft/hard daily loss cap")
 	fmt.Fprintln(stdout)
 
 	closeAndRecord := func(symbol string, t openTrade, reason string, trades openTradesFile) {

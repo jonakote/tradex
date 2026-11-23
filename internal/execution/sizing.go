@@ -128,6 +128,28 @@ var MeasuredIBSStats = map[string]IBSStats{
 	"JPM": {WinRate: 0.705, AvgWinBps: 132.39, AvgLossBps: 133.14, Robust: true, Side: "long"},
 	"XOM": {WinRate: 0.597, AvgWinBps: 161.95, AvgLossBps: 196.39, Robust: true, Side: "long"},
 	"KO":  {WinRate: 0.641, AvgWinBps: 105.35, AvgLossBps: 133.15, Robust: true, Side: "long"},
+	// Breadth round 8 (2026-11-23): more Capital.com-native crypto
+	// pairs, found while checking which further crypto is untested --
+	// high-volatility instruments (crypto, metals, growth stocks)
+	// already carry this project's structurally largest measured
+	// expectancy (+51bp/trade average vs. +7bp for FX majors), so this
+	// is where the highest-value remaining breadth was. 7 tested
+	// (XRPUSD, SOLUSD, ADAUSD, DOGEUSD, LTCUSD, DOTUSD, AVAXUSD), real
+	// swap included (-0.0616438%/day = 6.16bps/day, identical generic
+	// rate across all of them, confirmed live). Only SOLUSD and
+	// DOGEUSD clear the real >=30-trades/half bar under IBS --
+	// XRPUSD/ADAUSD/AVAXUSD's RSI2 numbers looked attractive
+	// (+92-290bp/trade) but their samples (14-19 trades/half) are too
+	// thin to trust and are explicitly NOT deployed; Donchian breakout
+	// also looked attractive on several of these but none cleared
+	// 30/half either (signals are too rare over the available crypto
+	// history). LTCUSD/DOTUSD/remaining buckets rejected outright
+	// (negative or sign-flipping). StopMultiplier 4 (not the default
+	// 3x) applied here too, consistent with the same crypto-specific
+	// stop-width reasoning already used for BTCUSD's RSI2/Breakout
+	// entries -- crypto's larger moves need the same room to revert.
+	"SOLUSD":  {WinRate: 0.585, AvgWinBps: 395.13, AvgLossBps: 435.19, Robust: true, Side: "long", StopMultiplier: 4},
+	"DOGEUSD": {WinRate: 0.597, AvgWinBps: 395.42, AvgLossBps: 506.11, Robust: true, Side: "long", StopMultiplier: 4},
 }
 
 // MeasuredRSI2Stats: Connors' 2-period RSI mean-reversion, same v0.2

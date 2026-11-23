@@ -158,6 +158,19 @@ var registry = func() map[string]Spec {
 	specs = append(specs,
 		crypto("BTCUSD", 2),
 		crypto("ETHUSD", 2),
+		// Breadth round 8 (2026-11-23): more Capital.com-native crypto
+		// pairs, found while checking whether high-volatility
+		// instruments (where this project's measured expectancy is
+		// already structurally largest) have more untapped breadth.
+		// Precision verified live via GET /api/v1/markets/{epic},
+		// NOT guessed from the symbol's typical quoting convention.
+		crypto("XRPUSD", 5),
+		crypto("SOLUSD", 4),
+		crypto("ADAUSD", 6),
+		crypto("DOGEUSD", 7),
+		crypto("LTCUSD", 2),
+		crypto("DOTUSD", 4),
+		crypto("AVAXUSD", 4),
 	)
 
 	// US shares (individual stocks). digits=2 verified via GET
@@ -249,6 +262,8 @@ func MinDealSize(symbol string) float64 {
 		return 100 // Capital.com FX sizing: value in the market's own POINTS unit
 	case "BTCUSD":
 		return 0.0001
+	case "SOLUSD", "DOGEUSD":
+		return 1 // verified live lotSize via GET /api/v1/markets/{epic}
 	case "J225":
 		return 0.1
 	case "WTI", "BRENT":

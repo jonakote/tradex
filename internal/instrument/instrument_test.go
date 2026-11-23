@@ -118,7 +118,7 @@ func TestNormalizeAcceptsEveryFeedSpelling(t *testing.T) {
 // Lookup must fail closed. A guessed scale is worse than a refusal because
 // it silently changes what every tick parameter means.
 func TestLookupFailsClosedOnUnknownInstruments(t *testing.T) {
-	for _, symbol := range []string{"DOGEUSD", "SOMETHINGELSE", "", "ZZZZZZ"} {
+	for _, symbol := range []string{"SHIBUSD", "SOMETHINGELSE", "", "ZZZZZZ"} {
 		if _, ok := Lookup(symbol); ok {
 			t.Fatalf("%q must not resolve", symbol)
 		}
