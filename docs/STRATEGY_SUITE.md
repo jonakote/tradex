@@ -991,3 +991,62 @@ bar this project requires. Reporting this as "found something
 promising but not trustworthy yet" rather than quietly deploying it
 or quietly dropping it -- the honest state is exactly that: unresolved,
 documented, not live.
+
+## RSI2's stop multiplier widened 3x -> 4x, backed by a live diagnostic (2026-11-23)
+
+"What can we do to improve our outcome" got a real, measured answer
+instead of generic advice, starting from an actual decomposition of
+the live account's P&L.
+
+**The diagnostic**: of 18 closed demo trades at that point (7 wins,
+11 losses, net realized -$13.58), splitting by exit reason showed the
+strategies' own exit logic (`strategy_exit`) was net **+$39.10** (7
+wins +$49.43, 6 small losses -$10.33) while 5 broker-side stop-outs
+(`broker_closed_externally`: US30 x3, JPM, MSFT) accounted for
+**-$52.68** -- almost the entire realized loss. The signal logic is
+working; stop-outs are the drag.
+
+**Checked whether this was anomalous or normal**, rather than assume
+either: re-ran a stop-inclusive historical backtest (6y daily bars,
+the real 3x-avg-loss stop, exact live entry/exit/trend-filter
+parameters) for the specific symbols that got stopped. Found a real,
+consistent, previously-unmeasured pattern: **RSI2's stop-hit rate is
+structurally much higher than IBS's** -- JPM RSI2 22.0%, MSFT RSI2
+32.4%, vs. US30 IBS 8.0%, MSFT IBS 9.1% -- at the identical 3x
+multiplier. Mechanism: RSI2's extreme-oversold entry condition catches
+sharper, more continuation-prone drops than IBS's close-near-low
+condition before they revert, so its loss distribution has a fatter
+tail relative to its own average loss.
+
+**Then checked whether a wider stop actually helps**, rather than
+assume it does: swept the stop multiplier (2x to effectively no stop)
+on 5 RSI2 symbols. 4 came back cleanly positive and monotonic --
+expectancy improves as the stop widens (JPM: 45.6bp at 3x -> 71.7bp
+unstopped; MSFT: 28.4bp -> 77.2bp; US100: 80.6bp -> 86.5bp; AAPL:
+14.5bp -> 54.6bp) -- a tight stop clips the mean-reversion edge before
+it has room to revert, the same mechanism found in the (separately
+rejected) intraday IBS research. The 5th, PLATINUM, was NOISY and
+inconclusive (n=26, below the 30-trade bar) and explicitly excluded
+from the conclusion rather than cherry-picked to support it. IBS, by
+contrast, barely moved across the same multiplier range (US30: 8.3bp
+at 3x vs 9.5bp unstopped) -- confirming the fix belongs on RSI2
+specifically, not as a blanket change to every strategy.
+
+**What changed**: `MeasuredRSI2Stats`'s `StopMultiplier` set to 4
+(from the global default of 3) on every entry -- a real, moderate,
+evidence-backed widening, not a guess and not tuned to a target
+number. Does not increase dollar risk per trade: position sizing
+resizes to the stop distance to keep `RiskPct` constant, so a wider
+stop means a smaller position that can breathe longer, not a bigger
+loss when it eventually does fire. Only applies to NEW entries going
+forward -- the 4 positions already open at the time (sized and
+stopped under the old 3x rule) are unaffected; broker-side stop
+orders aren't retroactively moved.
+
+**What this is not**: a parameter sweep to hit a target number (the
+multiplier was picked because 4 of 5 symbols' OWN data supported it,
+not because it produced a specific headline figure), and not a claim
+that stop-outs will stop happening -- RSI2's entries will still
+sometimes be wrong and still sometimes get stopped; the claim is only
+that, on the evidence gathered, a wider stop should make the overall
+expectancy better than it already measures to be.

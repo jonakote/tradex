@@ -155,10 +155,31 @@ var MeasuredIBSStats = map[string]IBSStats{
 // Signal-day overlap with IBS on the shared instruments is only 21-39%
 // (measured before this correction) -- most RSI2 trade days are genuinely
 // new, not a restatement of IBS's own signal.
+// StopMultiplier: 4 (not the global 3x default) on every entry below,
+// added 2026-11-23 after a real live diagnostic: of 18 closed demo
+// trades, 5 broker-side stop-outs accounted for -$52.68 while the
+// strategies' OWN exit logic was net +$39.10 (7 wins +$49.43, 6 small
+// losses -$10.33) -- the signal logic works, stop-outs were the drag.
+// Checked historically (daily bars, 6y, stop-inclusive backtest) WHY:
+// RSI2's entries catch sharper, more continuation-prone drops than
+// IBS's before they revert, so RSI2's stop-hit rate is structurally
+// higher (22-32% on JPM/MSFT) than IBS's (8-9% on US30/MSFT) at the
+// same 3x multiplier -- not a bug, a real difference in what each
+// detector's entry condition selects for. A stop-multiplier sweep
+// (2x-999x/no-stop) on 4 of 5 symbols tested (JPM, MSFT, US100, AAPL;
+// PLATINUM's sample here was too thin at n=26, below the 30-trade
+// bar, to trust) showed expectancy improving monotonically as the
+// stop widens -- a tighter stop clips the mean-reversion edge before
+// it has room to revert, the same mechanism found in the rejected
+// intraday IBS research. 4x is a real, moderate widening backed by
+// that evidence, not a guess. Does NOT increase dollar risk per trade
+// -- position sizing resizes to the stop distance to keep risk_pct
+// constant, so a wider stop means a smaller position that can breathe
+// longer, not a bigger loss when it does eventually fire.
 var MeasuredRSI2Stats = map[string]IBSStats{
-	"US100":    {WinRate: 0.719, AvgWinBps: 102.27, AvgLossBps: 116.36, Robust: true, Side: "long"},
-	"US500":    {WinRate: 0.717, AvgWinBps: 81.39, AvgLossBps: 90.83, Robust: true, Side: "long"},
-	"PLATINUM": {WinRate: 0.712, AvgWinBps: 194.46, AvgLossBps: 171.56, Robust: true, Side: "long"},
+	"US100":    {WinRate: 0.719, AvgWinBps: 102.27, AvgLossBps: 116.36, Robust: true, Side: "long", StopMultiplier: 4},
+	"US500":    {WinRate: 0.717, AvgWinBps: 81.39, AvgLossBps: 90.83, Robust: true, Side: "long", StopMultiplier: 4},
+	"PLATINUM": {WinRate: 0.712, AvgWinBps: 194.46, AvgLossBps: 171.56, Robust: true, Side: "long", StopMultiplier: 4},
 	// BTCUSD: measured on Capital.com's OWN price feed (NOT Binance's
 	// BTCUSDT -- those are different venues/price series, see
 	// internal/instrument/capital.go). Real daily swap cost included
@@ -166,7 +187,7 @@ var MeasuredRSI2Stats = map[string]IBSStats{
 	// positive (+25.04bp/+53.38bp). ETHUSD was ALSO tested the same way
 	// and REJECTED: it looks fine on Binance but sign-flips on
 	// Capital.com's actual feed (-1.99bp/+86.85bp) -- not deployed.
-	"BTCUSD": {WinRate: 0.638, AvgWinBps: 223.33, AvgLossBps: 285.34, Robust: true, Side: "long"},
+	"BTCUSD": {WinRate: 0.638, AvgWinBps: 223.33, AvgLossBps: 285.34, Robust: true, Side: "long", StopMultiplier: 4},
 	// Breadth round 5 (2026-11-12), real swap included:
 	// J225 (171 trades, +29.86bp both halves) -- standalone; its
 	// confluence with IBS is weaker than RSI2 alone here (odd, but
@@ -178,28 +199,28 @@ var MeasuredRSI2Stats = map[string]IBSStats{
 	// (USDCAD's confluence flipped specifically from the swap addition),
 	// so none of these four are confluence symbols.
 	// GBPJPY -- standalone only, same reasoning as its IBS entry above.
-	"J225":   {WinRate: 0.667, AvgWinBps: 105.10, AvgLossBps: 120.62, Robust: true, Side: "long"},
-	"BRENT":  {WinRate: 0.642, AvgWinBps: 216.42, AvgLossBps: 223.61, Robust: true, Side: "long"},
-	"WTI":    {WinRate: 0.573, AvgWinBps: 217.03, AvgLossBps: 196.16, Robust: true, Side: "long"},
-	"USDCAD": {WinRate: 0.624, AvgWinBps: 29.45, AvgLossBps: 27.35, Robust: true, Side: "long"},
-	"AUDJPY": {WinRate: 0.626, AvgWinBps: 47.49, AvgLossBps: 63.59, Robust: true, Side: "long"},
-	"EURJPY": {WinRate: 0.605, AvgWinBps: 35.88, AvgLossBps: 38.34, Robust: true, Side: "long"},
-	"EURGBP": {WinRate: 0.573, AvgWinBps: 27.58, AvgLossBps: 26.96, Robust: true, Side: "long"},
-	"GBPJPY": {WinRate: 0.676, AvgWinBps: 33.21, AvgLossBps: 52.00, Robust: true, Side: "long"},
+	"J225":   {WinRate: 0.667, AvgWinBps: 105.10, AvgLossBps: 120.62, Robust: true, Side: "long", StopMultiplier: 4},
+	"BRENT":  {WinRate: 0.642, AvgWinBps: 216.42, AvgLossBps: 223.61, Robust: true, Side: "long", StopMultiplier: 4},
+	"WTI":    {WinRate: 0.573, AvgWinBps: 217.03, AvgLossBps: 196.16, Robust: true, Side: "long", StopMultiplier: 4},
+	"USDCAD": {WinRate: 0.624, AvgWinBps: 29.45, AvgLossBps: 27.35, Robust: true, Side: "long", StopMultiplier: 4},
+	"AUDJPY": {WinRate: 0.626, AvgWinBps: 47.49, AvgLossBps: 63.59, Robust: true, Side: "long", StopMultiplier: 4},
+	"EURJPY": {WinRate: 0.605, AvgWinBps: 35.88, AvgLossBps: 38.34, Robust: true, Side: "long", StopMultiplier: 4},
+	"EURGBP": {WinRate: 0.573, AvgWinBps: 27.58, AvgLossBps: 26.96, Robust: true, Side: "long", StopMultiplier: 4},
+	"GBPJPY": {WinRate: 0.676, AvgWinBps: 33.21, AvgLossBps: 52.00, Robust: true, Side: "long", StopMultiplier: 4},
 	// US shares, breadth round 6 (2026-11-17): RSI2 alone confirms,
 	// both halves positive, with real swap included.
-	"MSFT": {WinRate: 0.669, AvgWinBps: 124.96, AvgLossBps: 128.53, Robust: true, Side: "long"},
-	"NVDA": {WinRate: 0.654, AvgWinBps: 259.26, AvgLossBps: 199.55, Robust: true, Side: "long"},
-	"GOOGL": {WinRate: 0.617, AvgWinBps: 117.64, AvgLossBps: 112.85, Robust: true, Side: "long"},
-	"JNJ":  {WinRate: 0.582, AvgWinBps: 118.70, AvgLossBps: 125.20, Robust: true, Side: "long"},
-	"V":    {WinRate: 0.629, AvgWinBps: 93.77, AvgLossBps: 132.42, Robust: true, Side: "long"},
+	"MSFT": {WinRate: 0.669, AvgWinBps: 124.96, AvgLossBps: 128.53, Robust: true, Side: "long", StopMultiplier: 4},
+	"NVDA": {WinRate: 0.654, AvgWinBps: 259.26, AvgLossBps: 199.55, Robust: true, Side: "long", StopMultiplier: 4},
+	"GOOGL": {WinRate: 0.617, AvgWinBps: 117.64, AvgLossBps: 112.85, Robust: true, Side: "long", StopMultiplier: 4},
+	"JNJ":  {WinRate: 0.582, AvgWinBps: 118.70, AvgLossBps: 125.20, Robust: true, Side: "long", StopMultiplier: 4},
+	"V":    {WinRate: 0.629, AvgWinBps: 93.77, AvgLossBps: 132.42, Robust: true, Side: "long", StopMultiplier: 4},
 	// AAPL also confirms RSI2 alone (as well as IBS alone and
 	// confluence -- all three bucket independently, see
 	// MeasuredIBSStats/MeasuredConfluenceStats).
-	"AAPL": {WinRate: 0.615, AvgWinBps: 123.99, AvgLossBps: 157.31, Robust: true, Side: "long"},
+	"AAPL": {WinRate: 0.615, AvgWinBps: 123.99, AvgLossBps: 157.31, Robust: true, Side: "long", StopMultiplier: 4},
 	// JPM confirms RSI2 alone too (see MeasuredIBSStats for the IBS
 	// side) -- confluence deliberately excluded for JPM, same reasoning.
-	"JPM": {WinRate: 0.632, AvgWinBps: 100.49, AvgLossBps: 142.02, Robust: true, Side: "long"},
+	"JPM": {WinRate: 0.632, AvgWinBps: 100.49, AvgLossBps: 142.02, Robust: true, Side: "long", StopMultiplier: 4},
 	// AUDCAD, breadth round 7 (2026-11-20): found via a genuinely
 	// different model first (z-score mean reversion, both sides, no
 	// trend filter -- see docs/STRATEGY_SUITE.md), then confirmed to
@@ -207,7 +228,7 @@ var MeasuredRSI2Stats = map[string]IBSStats{
 	// ship than a whole new strategy type for one symbol. IBS alone
 	// does NOT confirm here (sign flip) -- RSI2 alone does, real swap
 	// included (142 trades, both halves positive +3.3/+2.5bp).
-	"AUDCAD": {WinRate: 0.577, AvgWinBps: 30.36, AvgLossBps: 34.63, Robust: true, Side: "long"},
+	"AUDCAD": {WinRate: 0.577, AvgWinBps: 30.36, AvgLossBps: 34.63, Robust: true, Side: "long", StopMultiplier: 4},
 }
 
 // MeasuredConfluenceStats: a SEPARATE, stronger signal from IBS and RSI2
