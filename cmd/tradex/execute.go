@@ -488,7 +488,21 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 			// them (see docs/STRATEGY_SUITE.md's intraday IBS section).
 			if cfg.SessionStartHourUTC != 0 || cfg.SessionEndHourUTC != 0 {
 				h := time.Now().UTC().Hour()
-				if h < cfg.SessionStartHourUTC || h >= cfg.SessionEndHourUTC {
+				var inSession bool
+				if cfg.SessionStartHourUTC <= cfg.SessionEndHourUTC {
+					inSession = h >= cfg.SessionStartHourUTC && h < cfg.SessionEndHourUTC
+				} else {
+					// Midnight-wrapping session (e.g. 22-02 UTC): found
+					// 2026-11-24 during a security/bug audit -- the
+					// original h<start||h>=end test silently blocked
+					// EVERY hour whenever start>end, since neither
+					// term alone covers the wraparound. Not yet
+					// triggered live (no deployed config currently
+					// crosses midnight), but a real landmine for the
+					// next session-gated config that does.
+					inSession = h >= cfg.SessionStartHourUTC || h < cfg.SessionEndHourUTC
+				}
+				if !inSession {
 					continue
 				}
 			}

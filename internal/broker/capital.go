@@ -16,6 +16,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -46,12 +47,27 @@ type Client struct {
 // endpoint. This is the single safety control that matters most: every
 // other check in this package can have a bug, but if this one holds, a bug
 // elsewhere costs demo dollars, not real ones.
+//
+// Hardened 2026-11-24 (security/bug audit): the original check was a bare
+// substring test (strings.Contains(..., "demo")), which a malformed or
+// spoofed base_url could pass without actually being Capital.com's real
+// demo host -- e.g. "https://api.demo-lookalike.example.com" contains
+// "demo" but isn't the real endpoint. Now parses the URL and requires the
+// HOSTNAME itself (not path/query, which an attacker-controlled suffix
+// could still contain "demo" in) to start with "demo-", matching
+// Capital.com's actual naming convention (demo-api-capital.backend-
+// capital.com vs the real api-capital.backend-capital.com with no
+// "demo-" prefix at all).
 func NewClient(cfg Config) (*Client, error) {
 	if cfg.APIKey == "" || cfg.Identifier == "" || cfg.Password == "" || cfg.BaseURL == "" {
 		return nil, fmt.Errorf("broker: api_key, identifier, password and base_url are all required")
 	}
-	if !strings.Contains(strings.ToLower(cfg.BaseURL), "demo") {
-		return nil, fmt.Errorf("broker: refusing to start — base_url %q does not look like a demo endpoint; "+
+	u, err := url.Parse(cfg.BaseURL)
+	if err != nil || u.Hostname() == "" {
+		return nil, fmt.Errorf("broker: refusing to start — base_url %q does not parse as a URL", cfg.BaseURL)
+	}
+	if !strings.HasPrefix(strings.ToLower(u.Hostname()), "demo-") {
+		return nil, fmt.Errorf("broker: refusing to start — base_url %q's hostname does not start with \"demo-\"; "+
 			"this package will not place real-money orders without a deliberate code change, not a config flag", cfg.BaseURL)
 	}
 	return &Client{cfg: cfg, http: &http.Client{Timeout: 15 * time.Second}}, nil

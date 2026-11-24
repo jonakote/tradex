@@ -312,8 +312,16 @@ func (c RSI2) Detect(_ instrument.Spec, window []domain.Candle, _ int64) (Setup,
 			Reason:      fmt.Sprintf("RSI(2) %d bps (overbought), trend-filtered; mean-reversion short, exit in up to %d bars", rsi, hold),
 			Diagnostics: map[string]any{"rsi2_bps": rsi, "hold_bars": hold, "trend_filter_bars": c.TrendFilterBars}}
 		if c.StrengthExitBps > 0 {
+			// Mirrored around RSI2's own midpoint (5000), identical
+			// reasoning to the IBS detector's fix above -- found
+			// 2026-11-24 during a full security/bug audit, NOT yet
+			// triggered live (every current RSI2 config disables
+			// shorts: rsi2_short_above_bps: 0), but this is the exact
+			// same latent bug that bit IBS the moment a config needed
+			// a genuinely asymmetric threshold. Fixed proactively here
+			// before anyone builds a both-sides RSI2 config and hits it.
 			setup.HoldExitRule = "rsi2_strength_below"
-			setup.HoldExitThresholdBps = c.StrengthExitBps
+			setup.HoldExitThresholdBps = 10000 - c.StrengthExitBps
 		}
 		return setup, true
 	}
