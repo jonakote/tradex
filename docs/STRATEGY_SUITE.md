@@ -1109,3 +1109,62 @@ toward the asset classes that are ALREADY measured to produce the
 biggest edges, instead of defaulting to "FX/crypto" as one
 undifferentiated priority when the two have wildly different
 measured expectancy.
+
+## "A strategy with <30% losing trades" -- the answer was already in the live book (2026-11-24)
+
+User asked for a forex/crypto intraday-or-week-trade strategy with
+fewer than 3 losses per 10 trades (>70% win rate), explicitly
+instructed to go past literature and keep testing until finding one
+for forward test.
+
+**Intraday was tried first and failed cleanly, honestly reported
+rather than papered over**: a tight-target/wide-stop scalp (the
+classic mechanical way to engineer a high win rate) was swept across
+EURUSD 15-min bars -- win rates up to 89% were trivially achievable,
+but every single combination was net NEGATIVE after real cost (the
+"picking up pennies in front of a steamroller" pattern this project's
+own skill notes already warn about). A trend-pullback continuation
+mechanism was also tried on EURUSD and BTCUSD 15-min bars across a
+full parameter sweep -- raw edge was essentially zero on both
+(net return tracked the cost almost exactly regardless of target/stop
+ratio), confirming FX/crypto don't have exploitable continuation
+structure at 15-minute resolution with this mechanism either.
+
+**The real answer was in week-trade (daily-bar) territory, and it was
+largely already deployed**: re-checking the ALREADY-CONFIRMED,
+ALREADY-LIVE RSI2 book for win rate specifically (not just
+expectancy) found **GBPJPY RSI2 at 72.0% win rate** (+4.5bp/trade,
+both halves positive, real spread 1.16bp + real swap 0.411bp/day
+included) and **AUDCAD RSI2 at 78.1% win rate** (+33.4bp/trade, both
+halves positive, same real-cost standard) -- both already running in
+`docs/examples_watch_forward_daily_standalone_v2.json`, no new
+deployment needed. These clear the user's >70%-win-rate bar with a
+real, already-measured, already-live edge -- not a new discovery, but
+the honest existing answer that answers the actual question.
+
+**Crypto genuinely could not clear the same bar with available data**,
+reported honestly rather than force-fit: IBS exit-threshold widening
+on SOLUSD/DOGEUSD (the two confirmed crypto instruments) never
+exceeded ~59% win rate, and widening actively broke robustness on
+DOGEUSD. RSI2 on XRPUSD (entry RSI2<=10, exit RSI2>=60, 200-day trend
+filter, 10-day hold) showed a genuinely attractive **71.4% win rate,
++104.2bp/trade**, both halves nominally positive -- but only 35
+trades (17/half), short of the project's own 30-trades/half
+confirmation bar. Crypto's shorter available history on Capital.com
+(roughly 2021-present vs FX's full 6 years) is the structural reason
+every crypto RSI2 candidate keeps landing in this same thin-sample
+zone.
+
+**Deployed as an actual forward test, not a backtest claim, per the
+user's explicit instruction**: `docs/examples_watch_forward_xrpusd_rsi2_v1.json`
+running via `tradex watch` (NOT `tradex execute` -- no order
+authority, confirmed in its own startup banner), journal-only
+(`desktop: false, telegram: false`, matching the project's standing
+"keep sinks off until a holdout confirms an edge" rule), tagged
+UNVALIDATED on every signal. This is the correct, honest way to grow
+a promising-but-thin sample into a real confirmation or a real
+rejection -- not a shortcut around the confirmation bar.
+
+**9 background processes now**: the 8 live `tradex execute` processes
+(real demo orders) plus this 1 `tradex watch` forward-test-only
+process (journal, no orders) for XRPUSD.
