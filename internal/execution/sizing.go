@@ -202,6 +202,20 @@ var MeasuredRSI2Stats = map[string]IBSStats{
 	"US100":    {WinRate: 0.719, AvgWinBps: 102.27, AvgLossBps: 116.36, Robust: true, Side: "long", StopMultiplier: 4},
 	"US500":    {WinRate: 0.717, AvgWinBps: 81.39, AvgLossBps: 90.83, Robust: true, Side: "long", StopMultiplier: 4},
 	"PLATINUM": {WinRate: 0.712, AvgWinBps: 194.46, AvgLossBps: 171.56, Robust: true, Side: "long", StopMultiplier: 4},
+	// XRPUSD: NOT backtest-confirmed by this project's own bar (only 35
+	// trades / 17 per half, below the 30/half floor) -- Robust: false
+	// is deliberate, not an oversight, so IsValidated() keeps tagging
+	// every signal UNVALIDATED. Deployed to REAL demo execution anyway
+	// (not just a tradex watch journal) because the user explicitly
+	// asked for a forward test on the demo account, which is exactly
+	// how a thin-but-promising sample is meant to grow into a real
+	// confirmation or a real rejection -- not a shortcut around the
+	// bar. 71.4% win rate, +104.2bp/trade average, both halves
+	// nominally positive, real spread+swap included (entry RSI2<=10,
+	// exit RSI2>=60, 200-day trend filter, 10-day hold). Revisit this
+	// comment once real trade count reaches ~30: either flip Robust to
+	// true with a real citation, or remove the entry if it degrades.
+	"XRPUSD": {WinRate: 0.714, AvgWinBps: 457.34, AvgLossBps: 778.58, Robust: false, Side: "long", StopMultiplier: 4},
 	// BTCUSD: measured on Capital.com's OWN price feed (NOT Binance's
 	// BTCUSDT -- those are different venues/price series, see
 	// internal/instrument/capital.go). Real daily swap cost included

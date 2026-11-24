@@ -51,6 +51,7 @@ var marginFactorPct = map[string]float64{
 	"BTCUSD":   50,
 	"SOLUSD":   50,
 	"DOGEUSD":  50,
+	"XRPUSD":   50,
 	"J225":     5,
 	"WTI":      10,
 	"BRENT":    10,

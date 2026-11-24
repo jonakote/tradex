@@ -262,7 +262,7 @@ func MinDealSize(symbol string) float64 {
 		return 100 // Capital.com FX sizing: value in the market's own POINTS unit
 	case "BTCUSD":
 		return 0.0001
-	case "SOLUSD", "DOGEUSD":
+	case "SOLUSD", "DOGEUSD", "XRPUSD":
 		return 1 // verified live lotSize via GET /api/v1/markets/{epic}
 	case "J225":
 		return 0.1

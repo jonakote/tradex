@@ -1156,15 +1156,21 @@ every crypto RSI2 candidate keeps landing in this same thin-sample
 zone.
 
 **Deployed as an actual forward test, not a backtest claim, per the
-user's explicit instruction**: `docs/examples_watch_forward_xrpusd_rsi2_v1.json`
-running via `tradex watch` (NOT `tradex execute` -- no order
-authority, confirmed in its own startup banner), journal-only
-(`desktop: false, telegram: false`, matching the project's standing
-"keep sinks off until a holdout confirms an edge" rule), tagged
-UNVALIDATED on every signal. This is the correct, honest way to grow
-a promising-but-thin sample into a real confirmation or a real
-rejection -- not a shortcut around the confirmation bar.
+user's explicit instruction**: at first deployed via `tradex watch`
+(journal-only, no order authority) -- then CORRECTED when the user
+clarified "forward test would be using the demo account", meaning
+real demo orders, not a signal-only journal. Switched to
+`docs/examples_watch_forward_xrpusd_rsi2_execute_v1.json` running via
+`tradex execute` (places real demo orders, confirmed in its own
+startup banner: "tradeable [XRPUSD]"). `MeasuredRSI2Stats["XRPUSD"]`
+added with `Robust: false` DELIBERATELY (not an oversight) -- the
+`Robust` flag only gates `IsValidated()`'s UNVALIDATED tag on the
+signal payload, not whether `tradeableSymbols()` lets a symbol trade
+(that only checks presence in the stats table). This is the correct
+way to run real, honest money-adjacent exposure on a thin-but-real
+sample: it trades for real, but every signal still carries
+UNVALIDATED until the real trade count actually reaches the
+confirmation bar.
 
-**9 background processes now**: the 8 live `tradex execute` processes
-(real demo orders) plus this 1 `tradex watch` forward-test-only
-process (journal, no orders) for XRPUSD.
+**9 background processes now, all real `tradex execute`**: the 8 from
+before plus XRPUSD RSI2.

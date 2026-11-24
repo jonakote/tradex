@@ -12,7 +12,7 @@
   "poll_interval": "1h",
   "journal": "data/forward_signals_xrpusd_rsi2_v1.jsonl",
   "desktop": false,
-  "telegram": false,
+  "telegram": true,
   "symbol_cooldown": "20h",
   "group_cooldown": "20h"
 }
