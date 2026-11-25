@@ -417,3 +417,5 @@
 {"at":"2026-11-24T00:30:40Z","deal_id":"00000000-751a-b731-049e-1b1a0055311e","entry":271.17,"event":"close","exit":270.27,"pnl":-0.8100000000000307,"reason":"strategy_exit","side":"buy","size":0.9,"symbol":"JNJ"}
 {"at":"2026-11-25T00:41:38Z","deal_id":"00000000-751a-b11f-049e-1b1a0055311e","entry":3.6304,"event":"close","exit":3.599,"pnl":-0.627999999999993,"reason":"strategy_exit","side":"buy","size":20,"symbol":"NATGAS"}
 {"at":"2026-11-25T00:41:51Z","deal_id":"00000000-751a-b6b7-049e-1b1a0055311e","entry":494.2,"event":"close","exit":493.85,"pnl":-0.19949999999998058,"reason":"strategy_exit","side":"buy","size":0.5700000000000001,"symbol":"MSFT"}
+{"at":"2026-11-25T20:48:12Z","deal_id":"00000000-751a-0110-049e-1b1a0055311e","entry":255.65,"event":"close","exit":242.86851032,"pnl":-8.947042775999996,"reason":"broker_closed_externally","side":"buy","size":0.7000000000000001,"symbol":"AMZN"}
+{"at":"2026-11-25T20:48:38Z","deal_id":"00000000-76f2-b69e-049e-1b1a0055311e","entry":245.34,"event":"entry","margin_pct":3.613586101196293,"risk_pct":1,"side":"buy","size":0.7000000000000001,"stop":237.29847868000002,"symbol":"AMZN"}

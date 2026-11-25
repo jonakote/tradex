@@ -35,3 +35,12 @@ check_and_restart "docs/examples_watch_forward_daily_confluence_longonly_v2.json
 check_and_restart "docs/examples_watch_forward_daily_standalone_v2.json" "data/execute_standalone_v2.log"
 check_and_restart "docs/examples_watch_forward_daily_rsi2_btc_v2.json" "data/execute_rsi2_btc_v2.log"
 check_and_restart "docs/examples_watch_forward_daily_shares_v2.json" "data/execute_shares_v2.log"
+# Added 2026-11-25: these two were deployed mid-session (crypto breadth
+# round 8, XRPUSD forward test) and silently missed by this script for
+# days -- both went down in a full outage around 2026-11-25T01:30-20:48Z
+# and never came back because nothing was watching them. Caught only
+# when the user said "too quiet" and a live process count turned up 7/9,
+# not 9/9. Keep this list in sync with the actual deployed process set,
+# not just whatever existed when the script was first written.
+check_and_restart "docs/examples_watch_forward_daily_crypto_v2.json" "data/execute_crypto_v2.log"
+check_and_restart "docs/examples_watch_forward_xrpusd_rsi2_execute_v1.json" "data/execute_xrpusd_rsi2_v1.log"
