@@ -71,9 +71,18 @@ type IBSStats struct {
 // full-sample edge flips negative (-2.50bp) with halves still disagreeing
 // (-43.76/+23.67bp). Removed from both live configs and from this table —
 // three independent checks now say no, not one.
+//
+// StopMultiplier: all 31 entries across every map here that previously had
+// no explicit value (defaulting to the old 3x-avg-loss width) were bulk-
+// widened to 4x on 2026-11-26. The Nov 23 stop-width fix was only ever
+// applied to MeasuredRSI2Stats; this map (and the confluence/breakout maps
+// below) were silently missed, which is exactly why US30 (-$19.66) and
+// JPM's IBS-side stop-outs kept happening after that fix shipped — they
+// were trading on the still-unfixed 3x width the whole time. Caught via
+// the user's "we have a problem" / live P&L review, not a backtest.
 var MeasuredIBSStats = map[string]IBSStats{
-	"US100":    {WinRate: 0.661, AvgWinBps: 107.87, AvgLossBps: 117.23, Robust: true, Side: "both"},
-	"PLATINUM": {WinRate: 0.633, AvgWinBps: 142.83, AvgLossBps: 136.42, Robust: true, Side: "both"},
+	"US100":    {WinRate: 0.661, AvgWinBps: 107.87, AvgLossBps: 117.23, Robust: true, Side: "both", StopMultiplier: 4},
+	"PLATINUM": {WinRate: 0.633, AvgWinBps: 142.83, AvgLossBps: 136.42, Robust: true, Side: "both", StopMultiplier: 4},
 	// RETRACTED 2026-11-20 and reverted to the original daily entry.
 	// The intraday 15-min IBS/EURUSD-GBPUSD variant that briefly lived
 	// here was deployed on a methodology bug: the research backtest
@@ -98,8 +107,8 @@ var MeasuredIBSStats = map[string]IBSStats{
 	// sequentially, or its trade count and edge are both inflated by
 	// counting opportunities the live system could never actually
 	// take.
-	"EURUSD": {WinRate: 0.537, AvgWinBps: 34.30, AvgLossBps: 34.28, Robust: true, Side: "long"},
-	"NATGAS":   {WinRate: 0.551, AvgWinBps: 296.51, AvgLossBps: 322.73, Robust: true, Side: "long"},
+	"EURUSD": {WinRate: 0.537, AvgWinBps: 34.30, AvgLossBps: 34.28, Robust: true, Side: "long", StopMultiplier: 4},
+	"NATGAS":   {WinRate: 0.551, AvgWinBps: 296.51, AvgLossBps: 322.73, Robust: true, Side: "long", StopMultiplier: 4},
 	// Breadth round 5 (2026-11-12), same methodology, real swap included:
 	// COPPER (long only, 110 trades, +13.53bp both halves) -- feeds BOTH
 	// a standalone trade AND the COPPER confluence boost below; its own
@@ -111,23 +120,23 @@ var MeasuredIBSStats = map[string]IBSStats{
 	// only, same reasoning: its own RSI2 also confirms standalone (see
 	// MeasuredRSI2Stats) but the TWO COMBINED flip to -23.50bp -- GBPJPY
 	// must never be a confluence symbol.
-	"COPPER": {WinRate: 0.664, AvgWinBps: 87.11, AvgLossBps: 131.63, Robust: true, Side: "long"},
-	"US30":   {WinRate: 0.605, AvgWinBps: 55.30, AvgLossBps: 62.99, Robust: true, Side: "long"},
-	"GBPJPY": {WinRate: 0.600, AvgWinBps: 35.09, AvgLossBps: 40.88, Robust: true, Side: "long"},
+	"COPPER": {WinRate: 0.664, AvgWinBps: 87.11, AvgLossBps: 131.63, Robust: true, Side: "long", StopMultiplier: 4},
+	"US30":   {WinRate: 0.605, AvgWinBps: 55.30, AvgLossBps: 62.99, Robust: true, Side: "long", StopMultiplier: 4},
+	"GBPJPY": {WinRate: 0.600, AvgWinBps: 35.09, AvgLossBps: 40.88, Robust: true, Side: "long", StopMultiplier: 4},
 	// US shares, breadth round 6 (2026-11-17), same methodology + real
 	// swap (Capital.com's generic shares financing rate, identical
 	// across all shares: 0.0222624%/day -> 2.226bps/day). AAPL/AMZN/META/
 	// XOM/KO/TSLA/JPM confirm IBS alone, both halves positive.
-	"AAPL": {WinRate: 0.562, AvgWinBps: 127.85, AvgLossBps: 144.14, Robust: true, Side: "long"},
-	"TSLA": {WinRate: 0.617, AvgWinBps: 241.41, AvgLossBps: 356.66, Robust: true, Side: "long"},
-	"AMZN": {WinRate: 0.625, AvgWinBps: 140.92, AvgLossBps: 181.08, Robust: true, Side: "long"},
-	"META": {WinRate: 0.631, AvgWinBps: 209.54, AvgLossBps: 159.53, Robust: true, Side: "long"},
+	"AAPL": {WinRate: 0.562, AvgWinBps: 127.85, AvgLossBps: 144.14, Robust: true, Side: "long", StopMultiplier: 4},
+	"TSLA": {WinRate: 0.617, AvgWinBps: 241.41, AvgLossBps: 356.66, Robust: true, Side: "long", StopMultiplier: 4},
+	"AMZN": {WinRate: 0.625, AvgWinBps: 140.92, AvgLossBps: 181.08, Robust: true, Side: "long", StopMultiplier: 4},
+	"META": {WinRate: 0.631, AvgWinBps: 209.54, AvgLossBps: 159.53, Robust: true, Side: "long", StopMultiplier: 4},
 	// JPM confirms IBS alone AND RSI2 alone independently, but their
 	// COMBINED confluence bucket flips negative (-12.31bp) -- same
 	// GBPJPY pattern. JPM deliberately absent from every confluence set.
-	"JPM": {WinRate: 0.705, AvgWinBps: 132.39, AvgLossBps: 133.14, Robust: true, Side: "long"},
-	"XOM": {WinRate: 0.597, AvgWinBps: 161.95, AvgLossBps: 196.39, Robust: true, Side: "long"},
-	"KO":  {WinRate: 0.641, AvgWinBps: 105.35, AvgLossBps: 133.15, Robust: true, Side: "long"},
+	"JPM": {WinRate: 0.705, AvgWinBps: 132.39, AvgLossBps: 133.14, Robust: true, Side: "long", StopMultiplier: 4},
+	"XOM": {WinRate: 0.597, AvgWinBps: 161.95, AvgLossBps: 196.39, Robust: true, Side: "long", StopMultiplier: 4},
+	"KO":  {WinRate: 0.641, AvgWinBps: 105.35, AvgLossBps: 133.15, Robust: true, Side: "long", StopMultiplier: 4},
 	// Breadth round 8 (2026-11-23): more Capital.com-native crypto
 	// pairs, found while checking which further crypto is untested --
 	// high-volatility instruments (crypto, metals, growth stocks)
@@ -292,10 +301,10 @@ var MeasuredRSI2Stats = map[string]IBSStats{
 // confluence bucket (USDJPY +16.94/-9.17bp, BTCUSDT -1.62/+53.39bp) and are
 // deliberately excluded.
 var MeasuredConfluenceStats = map[string]IBSStats{
-	"US100":    {WinRate: 0.688, AvgWinBps: 76.14, AvgLossBps: 69.93, Robust: true, Side: "long"},
-	"PLATINUM": {WinRate: 0.660, AvgWinBps: 171.56, AvgLossBps: 85.74, Robust: true, Side: "long"},
-	"XAUUSD":   {WinRate: 0.663, AvgWinBps: 84.88, AvgLossBps: 100.72, Robust: true, Side: "long"},
-	"GBPUSD":   {WinRate: 0.703, AvgWinBps: 27.94, AvgLossBps: 26.81, Robust: true, Side: "long"},
+	"US100":    {WinRate: 0.688, AvgWinBps: 76.14, AvgLossBps: 69.93, Robust: true, Side: "long", StopMultiplier: 4},
+	"PLATINUM": {WinRate: 0.660, AvgWinBps: 171.56, AvgLossBps: 85.74, Robust: true, Side: "long", StopMultiplier: 4},
+	"XAUUSD":   {WinRate: 0.663, AvgWinBps: 84.88, AvgLossBps: 100.72, Robust: true, Side: "long", StopMultiplier: 4},
+	"GBPUSD":   {WinRate: 0.703, AvgWinBps: 27.94, AvgLossBps: 26.81, Robust: true, Side: "long", StopMultiplier: 4},
 	// Breadth round 5 (2026-11-12), real swap included:
 	// BRENT, WTI -- agreement beats RSI2 alone even further (boost).
 	// COPPER -- agreement beats IBS alone (boost); COPPER's RSI2 alone
@@ -303,10 +312,10 @@ var MeasuredConfluenceStats = map[string]IBSStats{
 	// confluence is the only way RSI2's reading contributes here.
 	// AUDUSD -- neither IBS nor RSI2 confirms alone; confluence rescues
 	// it, same pattern as XAUUSD/GBPUSD above.
-	"BRENT":  {WinRate: 0.673, AvgWinBps: 231.15, AvgLossBps: 190.14, Robust: true, Side: "long"},
-	"WTI":    {WinRate: 0.638, AvgWinBps: 174.05, AvgLossBps: 182.49, Robust: true, Side: "long"},
-	"COPPER": {WinRate: 0.756, AvgWinBps: 98.59, AvgLossBps: 243.68, Robust: true, Side: "long"},
-	"AUDUSD": {WinRate: 0.645, AvgWinBps: 34.17, AvgLossBps: 41.67, Robust: true, Side: "long"},
+	"BRENT":  {WinRate: 0.673, AvgWinBps: 231.15, AvgLossBps: 190.14, Robust: true, Side: "long", StopMultiplier: 4},
+	"WTI":    {WinRate: 0.638, AvgWinBps: 174.05, AvgLossBps: 182.49, Robust: true, Side: "long", StopMultiplier: 4},
+	"COPPER": {WinRate: 0.756, AvgWinBps: 98.59, AvgLossBps: 243.68, Robust: true, Side: "long", StopMultiplier: 4},
+	"AUDUSD": {WinRate: 0.645, AvgWinBps: 34.17, AvgLossBps: 41.67, Robust: true, Side: "long", StopMultiplier: 4},
 	// US shares, breadth round 6 (2026-11-17), real swap included:
 	// AAPL -- IBS, RSI2, AND confluence all three independently confirm
 	// (the richest case measured yet). MSFT/NVDA/GOOGL -- RSI2 alone
@@ -315,19 +324,19 @@ var MeasuredConfluenceStats = map[string]IBSStats{
 	// AMZN/META -- IBS alone confirms, RSI2 alone does not, agreement
 	// confirms stronger still. WMT -- NEITHER signal confirms alone,
 	// confluence rescues it (same AUDUSD/XAUUSD/GBPUSD pattern).
-	"AAPL":  {WinRate: 0.607, AvgWinBps: 128.21, AvgLossBps: 158.05, Robust: true, Side: "long"},
-	"MSFT":  {WinRate: 0.615, AvgWinBps: 119.40, AvgLossBps: 113.87, Robust: true, Side: "long"},
-	"NVDA":  {WinRate: 0.716, AvgWinBps: 301.05, AvgLossBps: 232.21, Robust: true, Side: "long"},
-	"GOOGL": {WinRate: 0.642, AvgWinBps: 135.72, AvgLossBps: 166.88, Robust: true, Side: "long"},
-	"AMZN":  {WinRate: 0.636, AvgWinBps: 157.00, AvgLossBps: 189.05, Robust: true, Side: "long"},
-	"META":  {WinRate: 0.708, AvgWinBps: 180.89, AvgLossBps: 189.43, Robust: true, Side: "long"},
-	"WMT":   {WinRate: 0.609, AvgWinBps: 126.26, AvgLossBps: 105.58, Robust: true, Side: "long"},
+	"AAPL":  {WinRate: 0.607, AvgWinBps: 128.21, AvgLossBps: 158.05, Robust: true, Side: "long", StopMultiplier: 4},
+	"MSFT":  {WinRate: 0.615, AvgWinBps: 119.40, AvgLossBps: 113.87, Robust: true, Side: "long", StopMultiplier: 4},
+	"NVDA":  {WinRate: 0.716, AvgWinBps: 301.05, AvgLossBps: 232.21, Robust: true, Side: "long", StopMultiplier: 4},
+	"GOOGL": {WinRate: 0.642, AvgWinBps: 135.72, AvgLossBps: 166.88, Robust: true, Side: "long", StopMultiplier: 4},
+	"AMZN":  {WinRate: 0.636, AvgWinBps: 157.00, AvgLossBps: 189.05, Robust: true, Side: "long", StopMultiplier: 4},
+	"META":  {WinRate: 0.708, AvgWinBps: 180.89, AvgLossBps: 189.43, Robust: true, Side: "long", StopMultiplier: 4},
+	"WMT":   {WinRate: 0.609, AvgWinBps: 126.26, AvgLossBps: 105.58, Robust: true, Side: "long", StopMultiplier: 4},
 	// AUDCAD, breadth round 7 (2026-11-20): RSI2 alone confirms (see
 	// MeasuredRSI2Stats), confluence confirms stronger still -- 51
 	// trades, thinner (~25-26/half, right at the floor like PLATINUM
 	// confluence was), both halves positive (+24.4/+21.9bp), real swap
 	// included.
-	"AUDCAD": {WinRate: 0.686, AvgWinBps: 43.55, AvgLossBps: 21.52, Robust: true, Side: "long"},
+	"AUDCAD": {WinRate: 0.686, AvgWinBps: 43.55, AvgLossBps: 21.52, Robust: true, Side: "long", StopMultiplier: 4},
 }
 
 // ConfluenceOnlySymbols: NEITHER IBS nor RSI2 confirms alone here -- only
@@ -427,7 +436,7 @@ func BreakoutRiskPct(symbol string) (float64, bool) {
 // XAUUSD confirmed too (+40.3/+248.0bp, n=30, thin) but EURUSD, AUDCAD
 // and ETHUSD all flipped sign between halves and are NOT deployed.
 var MeasuredBreakoutStats = map[string]IBSStats{
-	"BTCUSD": {WinRate: 0.333, AvgWinBps: 1693.9, AvgLossBps: 684.5, Robust: true, Side: "long"},
+	"BTCUSD": {WinRate: 0.333, AvgWinBps: 1693.9, AvgLossBps: 684.5, Robust: true, Side: "long", StopMultiplier: 4},
 }
 
 func riskPct(table map[string]IBSStats, symbol string) (float64, bool) {
