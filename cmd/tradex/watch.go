@@ -82,6 +82,13 @@ type WatchConfig struct {
 	// matters: a thin edge's backtest cost assumption is not a promise
 	// about what spread will actually be paid live.
 	MaxSpreadBps float64 `json:"max_spread_bps,omitempty"`
+
+	// MondayGapEnabled turns on the MONDAYGAP strategy (cmd/tradex/
+	// execute.go's special-cased handling -- not a scan.Detector, since
+	// it needs the live quote, not just closed bars). Only matters in
+	// `tradex execute`; `tradex watch` ignores it. See
+	// execution.MeasuredMondayGapStats for the research behind it.
+	MondayGapEnabled bool `json:"mondaygap_enabled,omitempty"`
 }
 
 // watchBlackout is the JSON form of notify.Blackout, durations as strings.
@@ -161,6 +168,13 @@ func buildDetectors(cfg WatchConfig) ([]scan.Detector, error) {
 				exitWin = 5
 			}
 			out = append(out, scan.Breakout{EntryWindow: entryWin, ExitWindow: exitWin, MaxHoldBars: cfg.BreakoutMaxHoldBars})
+		case "mondaygap":
+			// Not a scan.Detector -- needs the live quote, not just
+			// closed bars (see cmd/tradex/execute.go's special-cased
+			// handling, gated on cfg.MondayGapEnabled). Listing it here
+			// too is harmless and lets a config name it in "strategies"
+			// for clarity without buildDetectors rejecting it as
+			// unknown; it adds nothing to the detector list.
 		default:
 			return nil, fmt.Errorf("unknown strategy %q", name)
 		}

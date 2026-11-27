@@ -423,3 +423,50 @@
 {"at":"2026-11-26T00:48:26Z","deal_id":"00000000-76f5-a84b-049e-1b1a0055311e","entry":26165.8,"event":"entry","margin_pct":1.339567657579869,"risk_pct":1,"side":"sell","size":0.01,"stop":26980.3342653,"symbol":"US100"}
 {"at":"2026-11-26T00:48:28Z","deal_id":"00000000-76f5-a856-049e-1b1a0055311e","entry":1282.28,"event":"entry","margin_pct":2.3846243986678175,"risk_pct":1,"side":"sell","size":0.18,"stop":1341.55583806,"symbol":"PLATINUM"}
 {"at":"2026-11-26T00:48:39Z","deal_id":"00000000-76f5-a8cc-049e-1b1a0055311e","entry":1.42146,"event":"entry","margin_pct":2.9257792690151283,"risk_pct":1,"side":"buy","size":600,"stop":1.4059388994,"symbol":"USDCAD"}
+{"at":"2026-11-27T06:46:13Z","deal_id":"00000000-76f5-a856-049e-1b1a0055311e","entry":1282.28,"event":"close","exit":1341.55583806,"pnl":-10.669650850800013,"reason":"broker_closed_externally","side":"sell","size":0.18,"symbol":"PLATINUM"}
+{"at":"2026-11-27T06:46:15Z","deal_id":"00000000-76f5-a84b-049e-1b1a0055311e","entry":26165.8,"event":"close","exit":26202.5,"pnl":-0.36700000000000726,"reason":"strategy_exit","side":"sell","size":0.01,"symbol":"US100"}
+{"at":"2026-11-27T06:46:18Z","deal_id":"00000000-7703-53ce-049e-1b1a0055311e","entry":3.4868,"event":"entry","margin_pct":0.7270315437643619,"risk_pct":1,"side":"buy","size":20,"stop":3.0310211124,"symbol":"NATGAS"}
+{"at":"2026-11-27T06:49:46Z","deal_id":"00000000-7703-57c8-049e-1b1a0055311e","entry":359.1,"event":"entry","margin_pct":2.9646159150029776,"risk_pct":1,"side":"buy","size":0.4,"stop":334.26826368,"symbol":"AAPL"}
+{"at":"2026-11-27T06:49:48Z","deal_id":"00000000-7703-57d3-049e-1b1a0055311e","entry":499.9,"event":"entry","margin_pct":3.799688678555385,"risk_pct":1,"side":"buy","size":0.37,"stop":466.231002,"symbol":"MSFT"}
+{"at":"2026-11-27T06:49:56Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T06:49:58Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T06:50:02Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T07:49:59Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T07:50:00Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T07:50:02Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T08:49:57Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T08:49:58Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T08:50:00Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T09:49:44Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T09:49:45Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T09:49:52Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T10:49:46Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T10:49:46Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T10:49:48Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T11:50:02Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T11:50:06Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T11:50:08Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T12:49:55Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T12:49:57Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T12:49:59Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T13:01:57Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T13:01:59Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T13:02:02Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T14:02:10Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T14:02:11Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T14:02:12Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T15:02:10Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T15:02:10Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T15:02:12Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T17:02:10Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T17:02:10Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T17:02:11Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T18:12:10Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T18:12:21Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T18:12:53Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T19:02:12Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T19:02:13Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T19:02:14Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}
+{"at":"2026-11-27T20:02:35Z","event":"entry_blocked","reason":"max open positions reached","symbol":"XOM"}
+{"at":"2026-11-27T20:02:35Z","event":"entry_blocked","reason":"max open positions reached","symbol":"WMT"}
+{"at":"2026-11-27T20:02:37Z","event":"entry_blocked","reason":"max open positions reached","symbol":"KO"}

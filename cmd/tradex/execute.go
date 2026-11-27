@@ -64,6 +64,10 @@ var marginFactorPct = map[string]float64{
 	"GBPJPY":   3.333333,
 	"AUDUSD":   5,
 	"AUDCAD":   5,
+	// USDJPY: marginFactor 3.333333% verified live via GET
+	// /api/v1/markets/USDJPY on 2026-11-26 (added for the new MONDAYGAP
+	// strategy -- see execution.MeasuredMondayGapStats).
+	"USDJPY": 3.333333,
 	// US shares: marginFactor 20% verified live via GET
 	// /api/v1/markets for all 14 on 2026-11-17 (identical across all).
 	"AAPL": 20, "MSFT": 20, "TSLA": 20, "NVDA": 20, "AMZN": 20, "META": 20,
@@ -522,8 +526,10 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				continue
 			}
 			var spreadTicks int64
-			if quote, err := source.Snapshot(ctx, symbol); err == nil {
-				if s := int64(quote.Ask - quote.Bid); s > 0 {
+			var liveQuote domain.Quote
+			if q, err := source.Snapshot(ctx, symbol); err == nil {
+				liveQuote = q
+				if s := int64(q.Ask - q.Bid); s > 0 {
 					spreadTicks = s
 				}
 				// Real-time max-spread gate (intraday configs only --
@@ -537,9 +543,9 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				// outside peak liquidity. Checking the REAL spread at
 				// the moment of each potential entry, not trusting any
 				// assumption, is the only honest way to run this.
-				if cfg.MaxSpreadBps > 0 && quote.Bid > 0 {
-					mid := (quote.Bid + quote.Ask) / 2
-					spreadBps := float64(quote.Ask-quote.Bid) / float64(mid) * 10000
+				if cfg.MaxSpreadBps > 0 && q.Bid > 0 {
+					mid := (q.Bid + q.Ask) / 2
+					spreadBps := float64(q.Ask-q.Bid) / float64(mid) * 10000
 					if spreadBps > cfg.MaxSpreadBps {
 						logExec(map[string]any{"event": "entry_blocked", "symbol": symbol,
 							"reason": "real-time spread too wide for this edge", "spread_bps": spreadBps, "max_spread_bps": cfg.MaxSpreadBps})
@@ -562,6 +568,36 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 						rsi2Setup, rsi2OK = s, true
 					case "BREAKOUT":
 						breakoutSetup, breakoutOK = s, true
+					}
+				}
+			}
+
+			// MONDAYGAP: not a scan.Detector, because it needs the LIVE
+			// quote (today's actual price), not just closed bars -- the
+			// Detector interface is contractually closed-bars-only (see
+			// scan.Detector's doc comment). Special-cased here instead,
+			// same pattern as the session-hour/spread gates above.
+			// Found 2026-11-26 from scratch (not a paper): Mondays that
+			// open with a gap DOWN from the last closed (Friday's) bar
+			// show a robust, cost-inclusive recovery by Monday's own
+			// close, on every FX/crypto instrument tested. See
+			// execution.MeasuredMondayGapStats for the full writeup.
+			var mondayGapSetup scan.Setup
+			var mondayGapOK bool
+			if cfg.MondayGapEnabled && time.Now().UTC().Weekday() == time.Monday && len(window) > 0 && liveQuote.Bid > 0 && liveQuote.Ask > 0 {
+				fridayClose := window[len(window)-1].Close
+				liveMid := (liveQuote.Bid + liveQuote.Ask) / 2
+				if fridayClose > 0 {
+					gapBps := float64(liveMid-fridayClose) / float64(fridayClose) * 10000
+					if gapBps < 0 {
+						mondayGapSetup = scan.Setup{
+							Side:      "buy",
+							EntryType: "MARKET",
+							Entry:     liveMid,
+							HoldBars:  1, // exits once Monday's own daily bar closes -- see sizing.go's comment
+							Reason:    "mondaygap",
+						}
+						mondayGapOK = true
 					}
 				}
 			}
@@ -589,6 +625,8 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				setup, found, matchedStrategy = rsi2Setup, true, "RSI2"
 			case breakoutOK:
 				setup, found, matchedStrategy = breakoutSetup, true, "BREAKOUT"
+			case mondayGapOK:
+				setup, found, matchedStrategy = mondayGapSetup, true, "MONDAYGAP"
 			}
 			if !found {
 				continue
@@ -648,6 +686,21 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				// setup.HoldExitRule is already "donchian_low_break" from
 				// the detector itself -- left alone here, unlike
 				// CONFLUENCE above which overwrites it.
+			case "MONDAYGAP":
+				s, haveStats := execution.MeasuredMondayGapStats[symbol]
+				if !haveStats {
+					continue
+				}
+				stats = s
+				var ok bool
+				riskPct, ok = execution.MondayGapRiskPct(symbol)
+				if !ok {
+					continue
+				}
+				// setup.HoldBars is already 1 from the special-cased
+				// detection above -- exits once Monday's own daily bar
+				// closes, the only exit timing that stayed robust in
+				// research (see sizing.go's comment).
 			default:
 				continue
 			}
@@ -777,7 +830,8 @@ func tradeableSymbols(all []string) []string {
 		_, inRSI2 := execution.MeasuredRSI2Stats[s]
 		_, inConfluence := execution.MeasuredConfluenceStats[s]
 		_, inBreakout := execution.MeasuredBreakoutStats[s]
-		if inIBS || inRSI2 || inConfluence || inBreakout {
+		_, inMondayGap := execution.MeasuredMondayGapStats[s]
+		if inIBS || inRSI2 || inConfluence || inBreakout || inMondayGap {
 			out = append(out, s)
 		}
 	}

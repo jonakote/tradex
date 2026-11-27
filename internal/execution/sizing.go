@@ -418,6 +418,44 @@ func BreakoutRiskPct(symbol string) (float64, bool) {
 	return riskPct(MeasuredBreakoutStats, symbol)
 }
 
+// MondayGapRiskPct is the Monday-gap equivalent of HalfKellyRiskPct, same
+// formula and safeguards, against MeasuredMondayGapStats instead.
+func MondayGapRiskPct(symbol string) (float64, bool) {
+	return riskPct(MeasuredMondayGapStats, symbol)
+}
+
+// MeasuredMondayGapStats: found 2026-11-26 from the user's own from-scratch
+// price-action request ("I need to start by analyzing from the basics") --
+// NOT taken from a paper or forum, built bottom-up by testing raw candle
+// constructs (consecutive-close streaks, swing-level reactions, volatility
+// squeezes, pin bars, day-of-week seasonality) on 10-year FX daily data
+// (3-year BTCUSD -- the real limit of Capital.com's crypto feed) and
+// keeping only what survived.
+//
+// Finding: plain day-of-week seasonality showed nothing clean across all
+// 5 instruments, but filtering to Mondays that open with a GAP DOWN from
+// Friday's close did -- both-halves-robust, cost-inclusive, 8-9 of 11
+// years positive per FX pair, on EVERY instrument tested (EURUSD, GBPUSD,
+// USDJPY, AUDUSD, BTCUSD). Entry: Monday's live price vs the last closed
+// (Friday's) daily bar, gap<0 required. Exit: same day only -- a sweep of
+// holding 0-3 extra days showed exiting at Monday's own close is the ONLY
+// timing where all 5 stay robust; holding even one extra day breaks
+// EURUSD/GBPUSD/BTCUSD's robustness. Implemented as MaxHoldBars=1 (exits
+// once Monday's own daily bar closes), not a new date-based exit rule --
+// the existing BarsHeld>=MaxHoldBars mechanism already does exactly this
+// on a daily timeframe.
+//
+// Real trade counts (gap-down Mondays only, cost-inclusive: 1bp FX /
+// 10bp BTCUSD): EURUSD n=245, GBPUSD n=243, USDJPY n=266, AUDUSD n=262,
+// BTCUSD n=83 -- all comfortably above the 30/half bar.
+var MeasuredMondayGapStats = map[string]IBSStats{
+	"EURUSD": {WinRate: 0.551, AvgWinBps: 27.51, AvgLossBps: 25.89, Robust: true, Side: "long", StopMultiplier: 3},
+	"GBPUSD": {WinRate: 0.514, AvgWinBps: 33.21, AvgLossBps: 29.25, Robust: true, Side: "long", StopMultiplier: 3},
+	"USDJPY": {WinRate: 0.579, AvgWinBps: 29.20, AvgLossBps: 31.17, Robust: true, Side: "long", StopMultiplier: 3},
+	"AUDUSD": {WinRate: 0.557, AvgWinBps: 38.36, AvgLossBps: 30.54, Robust: true, Side: "long", StopMultiplier: 3},
+	"BTCUSD": {WinRate: 0.530, AvgWinBps: 238.59, AvgLossBps: 183.38, Robust: true, Side: "long", StopMultiplier: 3},
+}
+
 // MeasuredBreakoutStats: the trend-following Donchian breakout family
 // (internal/features/breakout.go), deliberately the opposite structural
 // bet from IBS/RSI2/Confluence -- low win rate, winners run far longer

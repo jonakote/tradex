@@ -44,3 +44,7 @@ check_and_restart "docs/examples_watch_forward_daily_shares_v2.json" "data/execu
 # not just whatever existed when the script was first written.
 check_and_restart "docs/examples_watch_forward_daily_crypto_v2.json" "data/execute_crypto_v2.log"
 check_and_restart "docs/examples_watch_forward_xrpusd_rsi2_execute_v1.json" "data/execute_xrpusd_rsi2_v1.log"
+# Added 2026-11-26: MONDAYGAP, the first from-scratch (not literature)
+# strategy this project found, per the user's explicit request to build
+# one from basic price action. See execution.MeasuredMondayGapStats.
+check_and_restart "docs/examples_watch_forward_mondaygap_v1.json" "data/execute_mondaygap_v1.log"

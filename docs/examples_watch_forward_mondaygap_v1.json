@@ -1,0 +1,14 @@
+{
+  "capital": {
+    "symbols": ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "BTCUSD"],
+    "interval": "1d"
+  },
+  "strategies": ["mondaygap"],
+  "mondaygap_enabled": true,
+  "poll_interval": "1h",
+  "journal": "data/forward_signals_mondaygap_v1.jsonl",
+  "desktop": false,
+  "telegram": true,
+  "symbol_cooldown": "48h",
+  "group_cooldown": "48h"
+}
