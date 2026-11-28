@@ -51,3 +51,6 @@ check_and_restart "docs/examples_watch_forward_mondaygap_v1.json" "data/execute_
 # Added 2026-11-28: the first intraday (15m) strategy this project has
 # deployed -- RSI2, late-session (16-21 UTC), EURUSD/USDJPY.
 check_and_restart "docs/examples_watch_forward_intraday_rsi2_v1.json" "data/execute_examples_watch_forward_intraday_rsi2_v1.log"
+# Added 2026-11-28: second intraday strategy, overnight session (21-01
+# UTC), EURJPY/EURGBP/USDCAD.
+check_and_restart "docs/examples_watch_forward_intraday_rsi2_overnight_v1.json" "data/execute_examples_watch_forward_intraday_rsi2_overnight_v1.log"

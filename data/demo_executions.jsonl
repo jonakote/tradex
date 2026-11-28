@@ -494,3 +494,4 @@
 {"at":"2026-11-28T10:51:21Z","event":"entry_blocked","reason":"max open positions reached","symbol":"US100"}
 {"at":"2026-11-28T11:06:55Z","event":"entry_blocked","reason":"max open positions reached","symbol":"US100"}
 {"at":"2026-11-28T11:07:34Z","error":"broker: login: status 429: {\"errorCode\":\"error.too-many.requests\"}","event":"hard_cap_check_skipped","reason":"AccountSummary failed"}
+{"at":"2026-11-28T11:32:24Z","event":"entry_blocked","reason":"max open positions reached","symbol":"US100"}
