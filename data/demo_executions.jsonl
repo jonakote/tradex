@@ -492,3 +492,4 @@
 {"at":"2026-11-28T09:13:32Z","event":"entry_blocked","reason":"max open positions reached","symbol":"US100"}
 {"at":"2026-11-28T09:51:17Z","event":"entry_blocked","reason":"max open positions reached","symbol":"US100"}
 {"at":"2026-11-28T10:51:21Z","event":"entry_blocked","reason":"max open positions reached","symbol":"US100"}
+{"at":"2026-11-28T11:06:55Z","event":"entry_blocked","reason":"max open positions reached","symbol":"US100"}

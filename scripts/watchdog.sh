@@ -48,3 +48,6 @@ check_and_restart "docs/examples_watch_forward_xrpusd_rsi2_execute_v1.json" "dat
 # strategy this project found, per the user's explicit request to build
 # one from basic price action. See execution.MeasuredMondayGapStats.
 check_and_restart "docs/examples_watch_forward_mondaygap_v1.json" "data/execute_mondaygap_v1.log"
+# Added 2026-11-28: the first intraday (15m) strategy this project has
+# deployed -- RSI2, late-session (16-21 UTC), EURUSD/USDJPY.
+check_and_restart "docs/examples_watch_forward_intraday_rsi2_v1.json" "data/execute_examples_watch_forward_intraday_rsi2_v1.log"
