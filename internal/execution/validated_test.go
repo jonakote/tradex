@@ -12,7 +12,8 @@ func TestIsValidated(t *testing.T) {
 		{"IBS", "DE40", false},       // tested and excluded (sign flip)
 		{"IBS", "NOTREAL", false},    // absent entirely
 		{"RSI2", "US500", true},
-		{"RSI2", "EURUSD", false},    // RSI2 does not confirm on EURUSD
+		{"RSI2", "EURUSD", true},     // intraday RSI2 (15m, late-session) confirmed 2026-11-28
+		{"RSI2", "GBPUSD", false},    // intraday RSI2 does not confirm on GBPUSD
 		{"CONFLUENCE", "XAUUSD", true},
 		{"CONFLUENCE", "USDCAD", false}, // confluence flips negative on USDCAD
 		{"UNKNOWNSTRATEGY", "US100", false},

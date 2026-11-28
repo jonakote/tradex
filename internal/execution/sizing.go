@@ -213,6 +213,32 @@ var MeasuredRSI2Stats = map[string]IBSStats{
 	"US100":    {WinRate: 0.719, AvgWinBps: 102.27, AvgLossBps: 116.36, Robust: true, Side: "long", StopMultiplier: 4},
 	"US500":    {WinRate: 0.717, AvgWinBps: 81.39, AvgLossBps: 90.83, Robust: true, Side: "long", StopMultiplier: 4},
 	"PLATINUM": {WinRate: 0.712, AvgWinBps: 194.46, AvgLossBps: 171.56, Robust: true, Side: "long", StopMultiplier: 4},
+	// EURUSD/USDJPY: the first INTRADAY (15m) strategy this project has
+	// actually deployed. Found 2026-11-28 improving on the earlier
+	// "RSI2 intraday: real edge, explicitly NOT deployed" finding
+	// (docs/STRATEGY_SUITE.md) -- that one failed on a single-point
+	// entry-threshold optimum (no stable neighborhood) and used the
+	// full 07-21 UTC session. This one is different on both counts:
+	// restricting to the LATE session (16:00-21:00 UTC, NY afternoon
+	// into close) and re-sweeping entry/exit/hold found entry<=2.5
+	// sits in the MIDDLE of a genuine plateau (robust continuously from
+	// entry 2.25 to 3.0, and insensitive to exit 65-90 and hold 16-96)
+	// -- the parameter-insensitivity this project requires before
+	// trusting a threshold, which the earlier attempt explicitly lacked.
+	// EURJPY also looked robust at first pass but was REJECTED once its
+	// REAL live spread (2.35bp, not the 1.3bp assumed) was substituted
+	// in -- flips net negative. GBPUSD/AUDUSD never confirmed in this
+	// session at any threshold tested. 10-year-FX-history-capped data,
+	// ~2.9 years actually available (2024-01-01 to present, Capital.com's
+	// real cap), real live spreads (EURUSD 0.64bp, USDJPY 0.75bp).
+	// EURUSD n=236 (118/half, half1 +1.25bp/half2 +0.36bp); USDJPY
+	// n=200 (100/half, half1 +1.57bp/half2 +0.56bp). Config: entry
+	// RSI2<=2.5 (rsi2_long_below_bps=250), exit RSI2>=75
+	// (rsi2_strength_exit_bps=7500), hold<=32 bars (8h), session hours
+	// 16-21 UTC, 15m interval -- see
+	// docs/examples_watch_forward_intraday_rsi2_v1.json.
+	"EURUSD": {WinRate: 0.653, AvgWinBps: 5.05, AvgLossBps: 7.16, Robust: true, Side: "long", StopMultiplier: 4},
+	"USDJPY": {WinRate: 0.675, AvgWinBps: 6.99, AvgLossBps: 11.24, Robust: true, Side: "long", StopMultiplier: 4},
 	// XRPUSD: NOT backtest-confirmed by this project's own bar (only 35
 	// trades / 17 per half, below the 30/half floor) -- Robust: false
 	// is deliberate, not an oversight, so IsValidated() keeps tagging
