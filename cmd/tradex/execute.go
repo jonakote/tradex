@@ -579,11 +579,11 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 					}
 				}
 			}
-			var ibsSetup, rsi2Setup, breakoutSetup scan.Setup
-			var ibsOK, rsi2OK, breakoutOK bool
+			var ibsSetup, rsi2Setup, breakoutSetup, rsi2OvernightSetup scan.Setup
+			var ibsOK, rsi2OK, breakoutOK, rsi2OvernightOK bool
 			for _, det := range detectors {
 				name := strings.ToUpper(det.Name())
-				if (name != "IBS" && name != "RSI2" && name != "BREAKOUT") || len(window) < det.RequiredBars() {
+				if (name != "IBS" && name != "RSI2" && name != "BREAKOUT" && name != "RSI2OVERNIGHT") || len(window) < det.RequiredBars() {
 					continue
 				}
 				if s, ok := det.Detect(spec, window, spreadTicks); ok {
@@ -594,6 +594,8 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 						rsi2Setup, rsi2OK = s, true
 					case "BREAKOUT":
 						breakoutSetup, breakoutOK = s, true
+					case "RSI2OVERNIGHT":
+						rsi2OvernightSetup, rsi2OvernightOK = s, true
 					}
 				}
 			}
@@ -653,6 +655,8 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				setup, found, matchedStrategy = breakoutSetup, true, "BREAKOUT"
 			case mondayGapOK:
 				setup, found, matchedStrategy = mondayGapSetup, true, "MONDAYGAP"
+			case rsi2OvernightOK:
+				setup, found, matchedStrategy = rsi2OvernightSetup, true, "RSI2OVERNIGHT"
 			}
 			if !found {
 				continue
@@ -727,6 +731,19 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				// detection above -- exits once Monday's own daily bar
 				// closes, the only exit timing that stayed robust in
 				// research (see sizing.go's comment).
+			case "RSI2OVERNIGHT":
+				s, haveStats := execution.MeasuredRSI2OvernightStats[symbol]
+				if !haveStats {
+					continue
+				}
+				stats = s
+				var ok bool
+				riskPct, ok = execution.RSI2OvernightRiskPct(symbol)
+				if !ok {
+					continue
+				}
+				// setup.HoldExitRule is already "rsi2_strength_above"
+				// from the wrapped detector itself, same as plain RSI2.
 			default:
 				continue
 			}
@@ -939,7 +956,8 @@ func tradeableSymbols(all []string) []string {
 		_, inConfluence := execution.MeasuredConfluenceStats[s]
 		_, inBreakout := execution.MeasuredBreakoutStats[s]
 		_, inMondayGap := execution.MeasuredMondayGapStats[s]
-		if inIBS || inRSI2 || inConfluence || inBreakout || inMondayGap {
+		_, inRSI2Overnight := execution.MeasuredRSI2OvernightStats[s]
+		if inIBS || inRSI2 || inConfluence || inBreakout || inMondayGap || inRSI2Overnight {
 			out = append(out, s)
 		}
 	}

@@ -484,6 +484,49 @@ var MeasuredMondayGapStats = map[string]IBSStats{
 	"BTCUSD": {WinRate: 0.530, AvgWinBps: 238.59, AvgLossBps: 183.38, Robust: true, Side: "long", StopMultiplier: 3},
 }
 
+// RSI2OvernightRiskPct is the RSI2-overnight equivalent of HalfKellyRiskPct.
+func RSI2OvernightRiskPct(symbol string) (float64, bool) {
+	return riskPct(MeasuredRSI2OvernightStats, symbol)
+}
+
+// MeasuredRSI2OvernightStats: a SECOND intraday (15m) strategy, found
+// 2026-11-28 the same session as the late-session (16-21 UTC) RSI2
+// strategy, per the user's "continue to look for more intraday
+// variations" request. Different session entirely: 21:00-01:00 UTC
+// (NY close into Tokyo open), where a thin-liquidity mean-reversion
+// pattern shows up strongly across multiple pairs.
+//
+// Needs its OWN stats map (not MeasuredRSI2Stats) because EURJPY/
+// EURGBP/USDCAD are already live DAILY RSI2 symbols with completely
+// different sizing numbers -- reusing the same map would have
+// overwritten the daily strategy's sizing for these symbols. Routed
+// via the rsi2OvernightDetector wrapper (cmd/tradex/watch.go), which
+// reports Name()=="RSI2OVERNIGHT" instead of "RSI2".
+//
+// Config: entry RSI2<=2.5 (rsi2_long_below_bps=250), exit RSI2>=75
+// (rsi2_strength_exit_bps=7500), hold<=32 bars (8h), session hours
+// 21-01 UTC (wraps midnight), 15m interval, real spread AND real
+// overnight swap included (-0.411bp/day, charged once if the trade
+// holds through the 22:00 UTC rollover -- verified live via GET
+// /api/v1/markets/{epic}'s overnightFee field, same rate on all 3).
+// ~2.9 years of data (2024-01-01 to present, Capital.com's real 15m-FX
+// cap). EURJPY n=294 (147/half, +2.45bp/+1.23bp); EURGBP n=264
+// (132/half, +1.83bp/+3.46bp); USDCAD n=218 (109/half, +0.10bp/+1.91bp,
+// half1 thin-margin but still nominally positive -- weakest of the 3,
+// worth re-checking as more live data accrues). EURUSD and AUDJPY were
+// ALSO tested here: EURUSD not robust at this exact entry (half1
+// negative); AUDJPY looked very strong (71-80% win rate at every
+// threshold) but its real live spread could not be verified (FX
+// markets were closed/weekend at measurement time, and the one
+// available quote showed an implausibly wide 20bp vs. these pairs'
+// 0.6-4.5bp) -- EXCLUDED pending a live re-check during active hours,
+// not deployed on an unverified cost assumption.
+var MeasuredRSI2OvernightStats = map[string]IBSStats{
+	"EURJPY": {WinRate: 0.711, AvgWinBps: 6.57, AvgLossBps: 9.79, Robust: true, Side: "long", StopMultiplier: 4},
+	"EURGBP": {WinRate: 0.663, AvgWinBps: 5.50, AvgLossBps: 2.98, Robust: true, Side: "long", StopMultiplier: 4},
+	"USDCAD": {WinRate: 0.661, AvgWinBps: 4.19, AvgLossBps: 5.18, Robust: true, Side: "long", StopMultiplier: 4},
+}
+
 // MeasuredBreakoutStats: the trend-following Donchian breakout family
 // (internal/features/breakout.go), deliberately the opposite structural
 // bet from IBS/RSI2/Confluence -- low win rate, winners run far longer

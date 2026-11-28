@@ -37,6 +37,9 @@ func IsValidated(strategy, symbol string) bool {
 	case "MONDAYGAP":
 		s, ok := MeasuredMondayGapStats[symbol]
 		return ok && s.Robust
+	case "RSI2OVERNIGHT":
+		s, ok := MeasuredRSI2OvernightStats[symbol]
+		return ok && s.Robust
 	}
 	return false
 }

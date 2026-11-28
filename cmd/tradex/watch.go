@@ -21,6 +21,24 @@ import (
 	"tradex/internal/strategy/scan"
 )
 
+// rsi2OvernightDetector wraps scan.RSI2, identical mechanism and config
+// fields, but reports a distinct Name() ("RSI2OVERNIGHT" instead of
+// "RSI2") so execute.go's stats lookup routes to
+// execution.MeasuredRSI2OvernightStats instead of MeasuredRSI2Stats --
+// see the "rsi2overnight" case in buildDetectors for why this is needed
+// (symbol collision with the already-live daily RSI2 strategy).
+type rsi2OvernightDetector struct {
+	inner scan.RSI2
+}
+
+func (d rsi2OvernightDetector) Name() string      { return "RSI2OVERNIGHT" }
+func (d rsi2OvernightDetector) Spec() string      { return d.inner.Spec() }
+func (d rsi2OvernightDetector) Validated() bool   { return d.inner.Validated() }
+func (d rsi2OvernightDetector) RequiredBars() int { return d.inner.RequiredBars() }
+func (d rsi2OvernightDetector) Detect(spec instrument.Spec, window []domain.Candle, spreadTicks int64) (scan.Setup, bool) {
+	return d.inner.Detect(spec, window, spreadTicks)
+}
+
 // WatchConfig configures the multi-strategy background monitor. Every enabled
 // strategy is run against every instrument on each poll, and each setup is
 // delivered as a signal tagged with the strategy that produced it.
@@ -158,6 +176,24 @@ func buildDetectors(cfg WatchConfig) ([]scan.Detector, error) {
 			}
 			out = append(out, scan.RSI2{HoldBars: cfg.RSI2Hold, LongBelowBps: long, ShortAboveBps: cfg.RSI2ShortAboveBps,
 				TrendFilterBars: cfg.RSI2TrendFilterBars, StrengthExitBps: cfg.RSI2StrengthExitBps})
+		case "rsi2overnight":
+			// Same scan.RSI2 mechanism and config fields as "rsi2" --
+			// wrapped so Name() reports "RSI2OVERNIGHT" instead of
+			// "RSI2", routing execute.go's stats lookup to
+			// execution.MeasuredRSI2OvernightStats instead of
+			// MeasuredRSI2Stats. Needed because this is a genuinely
+			// different, separately-measured strategy (21:00-01:00 UTC
+			// session, 15m bars) that happens to share symbols
+			// (EURJPY/EURGBP/USDCAD) already used by the live DAILY
+			// RSI2 strategy -- reusing MeasuredRSI2Stats directly would
+			// have overwritten those symbols' daily sizing with
+			// intraday numbers. Added 2026-11-28.
+			long := cfg.RSI2LongBelowBps
+			if long == 0 && cfg.RSI2ShortAboveBps == 0 {
+				long = 1000
+			}
+			out = append(out, rsi2OvernightDetector{inner: scan.RSI2{HoldBars: cfg.RSI2Hold, LongBelowBps: long,
+				ShortAboveBps: cfg.RSI2ShortAboveBps, TrendFilterBars: cfg.RSI2TrendFilterBars, StrengthExitBps: cfg.RSI2StrengthExitBps}})
 		case "breakout":
 			entryWin := cfg.BreakoutEntryWindow
 			if entryWin == 0 {

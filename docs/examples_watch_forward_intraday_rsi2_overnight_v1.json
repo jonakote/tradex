@@ -1,0 +1,20 @@
+{
+  "capital": {
+    "symbols": ["EURJPY", "EURGBP", "USDCAD"],
+    "interval": "15m"
+  },
+  "strategies": ["rsi2overnight"],
+  "rsi2_long_below_bps": 250,
+  "rsi2_strength_exit_bps": 7500,
+  "rsi2_hold": 32,
+  "rsi2_trend_filter_bars": 0,
+  "session_start_hour_utc": 21,
+  "session_end_hour_utc": 1,
+  "max_spread_bps": 3.0,
+  "poll_interval": "15m",
+  "journal": "data/forward_signals_intraday_rsi2_overnight_v1.jsonl",
+  "desktop": false,
+  "telegram": true,
+  "symbol_cooldown": "4h",
+  "group_cooldown": "4h"
+}
