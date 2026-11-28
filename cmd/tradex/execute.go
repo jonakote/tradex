@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -760,6 +761,31 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 			}
 			if fillPrice > 0 {
 				entryPrice = fillPrice
+			}
+			// Correct the stop to the REAL fill price, not the stale
+			// pre-fill estimate it was placed with (PlaceOrder has no
+			// choice -- the broker only reveals fillPrice AFTER the
+			// order is already confirmed). See broker.Client.
+			// UpdateStopLevel's doc comment for the real stop-out this
+			// was found from (PLATINUM, 462bps realized vs a 343bps
+			// designed stop, traced to ~1.1% signal-to-fill slippage).
+			// Best-effort: if the amend fails, the original (still
+			// safe, just possibly off-design) stop stays in place --
+			// never leave a position with NO stop over this.
+			correctedStopDist := entryPrice * execution.ProtectiveStopBps(stats.AvgLossBps, stats.StopMultiplier) / 10000
+			correctedStopLevel := entryPrice - correctedStopDist
+			if setup.Side == "sell" {
+				correctedStopLevel = entryPrice + correctedStopDist
+			}
+			if math.Abs(correctedStopLevel-stopLevel) > 1e-9 {
+				if err := bro.UpdateStopLevel(dealID, correctedStopLevel); err != nil {
+					logExec(map[string]any{"event": "stop_amend_failed", "symbol": symbol, "deal_id": dealID,
+						"original_stop": stopLevel, "attempted_stop": correctedStopLevel, "error": err.Error()})
+				} else {
+					logExec(map[string]any{"event": "stop_amended", "symbol": symbol, "deal_id": dealID,
+						"original_stop": stopLevel, "corrected_stop": correctedStopLevel, "fill_price": entryPrice})
+					stopLevel = correctedStopLevel
+				}
 			}
 			hold := t_holdBars(setup)
 			trades.Trades[symbol] = openTrade{

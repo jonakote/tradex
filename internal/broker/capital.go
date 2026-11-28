@@ -334,6 +334,54 @@ func (c *Client) PlaceOrder(epic, direction string, size, stopLevel float64) (de
 	return "", 0, fmt.Errorf("broker: order ACCEPTED (ref %s) but the resulting position could not be found in OpenPositions — refusing to report success without a real dealId", placeResp.DealReference)
 }
 
+// UpdateStopLevel amends an already-open position's protective stop to a
+// new price, via Capital.com's PUT /api/v1/positions/{dealId}.
+//
+// Added 2026-11-27: PlaceOrder's stopLevel is necessarily computed BEFORE
+// the fill is known (the broker only returns the real fill price AFTER
+// the order is already placed and confirmed) -- so for a signal that's
+// stale by the time of execution (daily-bar strategies detect off
+// yesterday's close, then execute whenever the next scan happens), the
+// stop ends up a fixed DISTANCE from the STALE pre-fill estimate, not
+// from the REAL fill price. Found by reconciling a PLATINUM stop-out
+// (-$10.67, 462bps realized loss) against its own designed stop width
+// (StopMultiplier×AvgLossBps = 343bps) -- the 119bps gap traced exactly
+// to ~1.1% of adverse fill slippage between signal and execution. Not
+// random noise: every recent broker-side stop-out checked showed the
+// same signal-vs-fill mismatch. This method lets execute.go correct the
+// stop to the real fill price immediately after PlaceOrder returns,
+// instead of leaving a silently-mispriced stop in place for the life of
+// the trade.
+func (c *Client) UpdateStopLevel(dealID string, stopLevel float64) error {
+	if stopLevel <= 0 {
+		return fmt.Errorf("broker: refusing to amend %s: non-positive stop level %v", dealID, stopLevel)
+	}
+	body := map[string]any{
+		"stopLevel":      stopLevel,
+		"guaranteedStop": false,
+	}
+	var placeResp struct {
+		DealReference string `json:"dealReference"`
+	}
+	if err := c.do("PUT", "/api/v1/positions/"+dealID, body, &placeResp); err != nil {
+		return err
+	}
+	var confirm struct {
+		DealStatus string `json:"dealStatus"`
+		Reason     string `json:"reason"`
+	}
+	for i := 0; i < 3; i++ {
+		time.Sleep(time.Duration(i) * 500 * time.Millisecond)
+		if err := c.do("GET", "/api/v1/confirms/"+placeResp.DealReference, nil, &confirm); err == nil && confirm.DealStatus != "" {
+			break
+		}
+	}
+	if confirm.DealStatus != "" && confirm.DealStatus != "ACCEPTED" {
+		return fmt.Errorf("broker: stop amend rejected: %s (%s)", confirm.DealStatus, confirm.Reason)
+	}
+	return nil
+}
+
 // ClosePosition closes an open position fully by its deal ID.
 func (c *Client) ClosePosition(dealID string) error {
 	req, err := http.NewRequest("DELETE", c.cfg.BaseURL+"/api/v1/positions/"+dealID, nil)
