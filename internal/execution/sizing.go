@@ -521,8 +521,15 @@ func RSI2OvernightRiskPct(symbol string) (float64, bool) {
 // available quote showed an implausibly wide 20bp vs. these pairs'
 // 0.6-4.5bp) -- EXCLUDED pending a live re-check during active hours,
 // not deployed on an unverified cost assumption.
+//
+// GBPJPY added 2026-11-28 (same session): 80.9% win rate, n=272
+// (136/half, +2.96bp/+4.58bp), robust at EVERY entry (1.0-3.0), exit
+// (65-95) and hold (8-96) tested -- the most parameter-insensitive of
+// the 4 symbols checked in this session. Real overnight fee confirmed
+// live, same -0.411bp/day as the other 3.
 var MeasuredRSI2OvernightStats = map[string]IBSStats{
 	"EURJPY": {WinRate: 0.711, AvgWinBps: 6.57, AvgLossBps: 9.79, Robust: true, Side: "long", StopMultiplier: 4},
+	"GBPJPY": {WinRate: 0.809, AvgWinBps: 8.35, AvgLossBps: 15.62, Robust: true, Side: "long", StopMultiplier: 4},
 	"EURGBP": {WinRate: 0.663, AvgWinBps: 5.50, AvgLossBps: 2.98, Robust: true, Side: "long", StopMultiplier: 4},
 	"USDCAD": {WinRate: 0.661, AvgWinBps: 4.19, AvgLossBps: 5.18, Robust: true, Side: "long", StopMultiplier: 4},
 }

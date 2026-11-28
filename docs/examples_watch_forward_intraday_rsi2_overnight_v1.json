@@ -1,6 +1,6 @@
 {
   "capital": {
-    "symbols": ["EURJPY", "EURGBP", "USDCAD"],
+    "symbols": ["EURJPY", "GBPJPY", "EURGBP", "USDCAD"],
     "interval": "15m"
   },
   "strategies": ["rsi2overnight"],
