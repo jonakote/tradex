@@ -18,6 +18,8 @@
 //     — a smaller bet on a shakier result, not the same bet.
 package execution
 
+import "fmt"
+
 // IBSStats are the measured win rate and average win/loss (in bps of
 // price, net of transaction cost AND real overnight financing/swap) for
 // one instrument's IBS v0.2 signal, from `cmd/ibsv2` on the full available
@@ -496,4 +498,32 @@ func riskPct(table map[string]IBSStats, symbol string) (float64, bool) {
 		pct = MaxRiskPct
 	}
 	return pct, true
+}
+
+// init asserts every Measured*Stats entry sets StopMultiplier explicitly
+// -- added 2026-11-28. ProtectiveStopBps silently substitutes a default
+// of 3 whenever StopMultiplier<=0 (the zero value for an unset field),
+// which is EXACTLY the bug class that caused a real live incident: the
+// 2026-11-23 stop-width widening (3x -> 4x) was applied only to
+// MeasuredRSI2Stats, and the other tables silently kept trading on the
+// old 3x width with no error, no log line, and no test failure -- US30
+// and JPM's worst live losses (including the single worst loss in the
+// account's history, -$19.66 on US30) traded through that gap. Every
+// entry currently sets the field explicitly, so this panic should never
+// fire today; it exists purely so the NEXT missed field -- a one-line
+// omission, easy to miss in review -- fails loudly at process startup
+// instead of silently reintroducing the same incident.
+func init() {
+	check := func(name string, table map[string]IBSStats) {
+		for symbol, s := range table {
+			if s.StopMultiplier <= 0 {
+				panic(fmt.Sprintf("execution: %s[%q].StopMultiplier is unset (<=0) -- this would silently fall back to the old, narrower default width; see sizing.go's init() comment for the live incident this already caused once", name, symbol))
+			}
+		}
+	}
+	check("MeasuredIBSStats", MeasuredIBSStats)
+	check("MeasuredRSI2Stats", MeasuredRSI2Stats)
+	check("MeasuredConfluenceStats", MeasuredConfluenceStats)
+	check("MeasuredMondayGapStats", MeasuredMondayGapStats)
+	check("MeasuredBreakoutStats", MeasuredBreakoutStats)
 }

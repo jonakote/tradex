@@ -274,6 +274,15 @@ func MinDealSize(symbol string) float64 {
 		return 0.001
 	case "USDCAD", "AUDJPY", "EURJPY", "EURGBP", "GBPJPY", "AUDUSD", "AUDCAD":
 		return 100 // Capital.com FX sizing: value in the market's own POINTS unit
+	case "USDJPY":
+		// Verified live via GET /api/v1/markets/USDJPY dealingRules
+		// (minDealSize 100 POINTS) on 2026-11-28 -- missing entirely
+		// before this, found while auditing the live MONDAYGAP
+		// strategy (deployed 2026-11-26, trades USDJPY). Without this,
+		// SizeToStop's minDealSize>0 floor-rounding step was silently
+		// skipped (see risk.go's SizeToStop), producing an unrounded
+		// size with no broker-minimum-lot floor applied at all.
+		return 100
 	case "MSFT", "META":
 		return 0.01
 	case "AAPL", "TSLA", "NVDA", "AMZN", "GOOGL", "JPM", "JNJ", "XOM", "WMT", "V", "KO":

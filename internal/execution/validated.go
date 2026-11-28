@@ -31,6 +31,12 @@ func IsValidated(strategy, symbol string) bool {
 	case "CONFLUENCE":
 		s, ok := MeasuredConfluenceStats[symbol]
 		return ok && s.Robust
+	case "BREAKOUT":
+		s, ok := MeasuredBreakoutStats[symbol]
+		return ok && s.Robust
+	case "MONDAYGAP":
+		s, ok := MeasuredMondayGapStats[symbol]
+		return ok && s.Robust
 	}
 	return false
 }

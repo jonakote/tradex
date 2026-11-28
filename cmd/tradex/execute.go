@@ -249,11 +249,28 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "%s [execute:%s] close failed: %v\n", time.Now().UTC().Format(time.RFC3339), symbol, err)
 			return
 		}
-		window, err := source.History(ctx, symbol, time.Now().UTC().Add(-3*timeframe), time.Now().UTC())
+		// Prefer the REAL close fill price from the broker's own
+		// activity history -- same fix, same reasoning as the
+		// reconciliation path a few hundred lines down for
+		// externally-closed positions (see broker.ClosedFillLevel's
+		// doc comment: this file's own entry-fill-price bug, found
+		// 2026-11-27 off a PLATINUM stop-out, was the same class of
+		// "we computed a price instead of asking the broker what it
+		// actually filled at" mistake). Before this fix, EVERY
+		// strategy_exit/hard_daily_loss_cap close (the most common
+		// close path in the system) used a nearby candle's close as
+		// an approximation instead, feeding slightly-wrong PnL into
+		// risk.RecordClose, which drives the daily-loss-cap threshold.
+		epic, _ := instrument.CapitalEpic(symbol)
+		if epic == "" {
+			epic = symbol
+		}
 		exitPrice := t.EntryPrice
-		if err == nil && len(window) > 0 {
+		if lvl, ok, err := bro.ClosedFillLevel(epic, t.OpenedAt); err == nil && ok {
+			exitPrice = lvl
+		} else if window, err := source.History(ctx, symbol, time.Now().UTC().Add(-3*timeframe), time.Now().UTC()); err == nil && len(window) > 0 {
 			spec, _ := instrument.Lookup(symbol)
-			exitPrice = spec.Price(int64(window[len(window)-1].Close))
+			exitPrice = spec.Price(int64(window[len(window)-1].Close)) // fallback approximation only
 		}
 		sign := 1.0
 		if t.Side == "sell" {
@@ -401,9 +418,17 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 			saveOpenTrades(openTradesPath, trades)
 		}
 
-		// Daily hard-loss flatten check, before anything else.
-		if acct, err := bro.AccountSummary(); err == nil && risk.ShouldFlattenEverything(acct.Balance) {
-			logExec(map[string]any{"event": "HARD_DAILY_LOSS_CAP_BREACHED", "action": "flattening all open positions", "balance": acct.Balance})
+		// Daily hard-loss flatten check, before anything else. This is
+		// the last line of defense before force-liquidation, so a
+		// transient AccountSummary failure skipping it silently (the
+		// `err == nil &&` short-circuit) is worth a loud log line of
+		// its own, not just falling through unremarked -- found
+		// 2026-11-28 reviewing this exact fail-open path.
+		hardCapAcct, acctErr := bro.AccountSummary()
+		if acctErr != nil {
+			logExec(map[string]any{"event": "hard_cap_check_skipped", "reason": "AccountSummary failed", "error": acctErr.Error()})
+		} else if risk.ShouldFlattenEverything(hardCapAcct.Balance, hardCapAcct.ProfitLoss) {
+			logExec(map[string]any{"event": "HARD_DAILY_LOSS_CAP_BREACHED", "action": "flattening all open positions", "balance": hardCapAcct.Balance})
 			for symbol, t := range trades.Trades {
 				closeAndRecord(symbol, t, "hard_daily_loss_cap", trades)
 			}
@@ -738,7 +763,7 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				continue
 			}
 
-			ok, reason := risk.ApproveEntry(acct.Balance, len(trades.Trades), committedMarginPct, thisMarginPct)
+			ok, reason := risk.ApproveEntry(acct.Balance, acct.ProfitLoss, len(trades.Trades), committedMarginPct, thisMarginPct)
 			if !ok {
 				logExec(map[string]any{"event": "entry_blocked", "symbol": symbol, "reason": reason})
 				continue
@@ -750,6 +775,15 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				direction = "SELL"
 				stopLevel = entryPrice + stopDistPrice
 			}
+			// Snap to the instrument's real tick grid before sending it
+			// to the broker -- added 2026-11-28: raw bps-of-price
+			// arithmetic can produce more decimal precision than
+			// Capital.com's tick size supports for fine-tick instruments
+			// (COPPER 0.00001, NATGAS 0.0001, etc.), which either gets
+			// silently rounded broker-side to an unknown boundary or
+			// risks a rejected order -- spec.Ticks/spec.Price already
+			// exist and are used for this exact purpose elsewhere.
+			stopLevel = spec.Price(spec.Ticks(stopLevel))
 			epic, ok := instrument.CapitalEpic(symbol)
 			if !ok {
 				epic = symbol
@@ -777,6 +811,7 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 			if setup.Side == "sell" {
 				correctedStopLevel = entryPrice + correctedStopDist
 			}
+			correctedStopLevel = spec.Price(spec.Ticks(correctedStopLevel)) // same tick-grid snap as the original stopLevel above
 			if math.Abs(correctedStopLevel-stopLevel) > 1e-9 {
 				if err := bro.UpdateStopLevel(dealID, correctedStopLevel); err != nil {
 					logExec(map[string]any{"event": "stop_amend_failed", "symbol": symbol, "deal_id": dealID,
@@ -795,7 +830,7 @@ func runExecute(args []string, stdout, stderr io.Writer) int {
 				LastBarSeen: window[len(window)-1].CloseTime, OpenedAt: time.Now().UTC(),
 			}
 			committedMarginPct += thisMarginPct
-			sig := buildStrategySignal(detectors[0], setup, spec, source.Interval(), spreadTicks, time.Now().UTC())
+			sig := buildStrategySignal(detectorFor(matchedStrategy, detectors), setup, spec, source.Interval(), spreadTicks, time.Now().UTC())
 			delivery.Send(ctx, sig)
 			logExec(map[string]any{"event": "entry", "symbol": symbol, "deal_id": dealID, "side": setup.Side,
 				"entry": entryPrice, "size": size, "risk_pct": riskPct, "stop": stopLevel, "margin_pct": thisMarginPct})
@@ -822,6 +857,53 @@ func t_holdBars(setup scan.Setup) int {
 		return setup.HoldBars
 	}
 	return 10
+}
+
+// genericDetector is a minimal scan.Detector stand-in purely so
+// buildStrategySignal's det.Name()/det.Spec() label a signal correctly
+// for a matchedStrategy that isn't a real scan.Detector (MONDAYGAP
+// needs the live quote, not just closed bars; CONFLUENCE is a label
+// synthesized from IBS+RSI2 agreement, not a detector of its own).
+// Detect and RequiredBars are never actually called on this value --
+// buildStrategySignal only reads Name()/Spec(), and IsValidated takes
+// det.Name() as a plain string, not det.Validated().
+type genericDetector struct {
+	name, specVersion string
+}
+
+func (d genericDetector) Name() string      { return d.name }
+func (d genericDetector) Spec() string      { return d.specVersion }
+func (d genericDetector) Validated() bool   { return false } // unused; see comment above
+func (d genericDetector) RequiredBars() int { return 0 }
+func (d genericDetector) Detect(_ instrument.Spec, _ []domain.Candle, _ int64) (scan.Setup, bool) {
+	return scan.Setup{}, false
+}
+
+// detectorFor resolves the REAL detector that produced matchedStrategy,
+// instead of always labeling a signal with detectors[0] -- found
+// 2026-11-28: for any multi-strategy config (every live config except
+// the single-strategy ones) where the matched strategy wasn't whichever
+// one happened to be listed first, buildStrategySignal was mislabeling
+// the Strategy field AND, because execution.IsValidated(det.Name(), ...)
+// is keyed off that same wrong name, reporting the WRONG Validated flag
+// too (checking the wrong symbol's robustness in the wrong stats table).
+func detectorFor(matchedStrategy string, detectors []scan.Detector) scan.Detector {
+	want := strings.ToUpper(matchedStrategy)
+	switch want {
+	case "CONFLUENCE":
+		return genericDetector{name: "CONFLUENCE", specVersion: "confluence-v1"}
+	case "MONDAYGAP":
+		return genericDetector{name: "MONDAYGAP", specVersion: "mondaygap-v1"}
+	}
+	for _, det := range detectors {
+		if strings.ToUpper(det.Name()) == want {
+			return det
+		}
+	}
+	if len(detectors) > 0 {
+		return detectors[0] // last-resort fallback, should not normally be reached
+	}
+	return genericDetector{name: matchedStrategy, specVersion: "unknown"}
 }
 
 func ibsOf(c domain.Candle, spec instrument.Spec) (int64, bool) {

@@ -101,7 +101,37 @@ func (c *Client) login() error {
 	return nil
 }
 
+// do executes one authenticated request. On a 401/403 it clears the
+// cached session and retries ONCE with a fresh login before giving up
+// -- added 2026-11-28. Each of the 10 concurrent `tradex execute`
+// processes caches its own CST/X-SECURITY-TOKEN in memory and only
+// re-logs-in on its own 8-minute timer (see login()); it has no way to
+// know if another process's login just evicted ITS session (Capital.com
+// may invalidate a prior session on a fresh login to the same account).
+// Before this fix, that would surface as a flat request failure with no
+// recovery until this process's own timer happened to expire. Checked
+// the logs across all 10 processes first: no 401/403 has actually
+// occurred yet in ~2 weeks of live running, so this is a dormant
+// structural risk, not something observed causing failures -- but it's
+// a one-line-cheap self-heal, so fixing it now rather than waiting for
+// the first real incident.
 func (c *Client) do(method, path string, body any, out any) error {
+	err := c.doOnce(method, path, body, out)
+	if err != nil && isAuthError(err) {
+		c.mu.Lock()
+		c.cst, c.security = "", "" // force a real re-login, not just the 8-minute cache check
+		c.mu.Unlock()
+		err = c.doOnce(method, path, body, out)
+	}
+	return err
+}
+
+func isAuthError(err error) bool {
+	s := err.Error()
+	return strings.Contains(s, "status 401") || strings.Contains(s, "status 403")
+}
+
+func (c *Client) doOnce(method, path string, body any, out any) error {
 	if err := c.login(); err != nil {
 		return err
 	}
@@ -307,7 +337,19 @@ func (c *Client) PlaceOrder(epic, direction string, size, stopLevel float64) (de
 			break
 		}
 	}
-	if confirm.DealStatus != "ACCEPTED" {
+	// Only hard-fail on an EXPLICIT rejection (a real, non-empty
+	// DealStatus that isn't ACCEPTED). If all 3 confirm polls
+	// errored/timed out (DealStatus still ""), that's NOT evidence the
+	// order was rejected -- the POST to /api/v1/positions already
+	// succeeded, so the order may well have filled; only the (separate,
+	// flaky) confirmation GET failed. Found 2026-11-28 self-auditing
+	// this method: the original code returned a hard "order rejected"
+	// here on an unconfirmed status, which skips the OpenPositions
+	// matching fallback below entirely -- a real, unmanaged position
+	// could then sit on the broker (with its stop, since that was sent
+	// in the POST) completely untracked by trades.Trades, with no exit
+	// management or margin accounting from that point on.
+	if confirm.DealStatus != "" && confirm.DealStatus != "ACCEPTED" {
 		return "", 0, fmt.Errorf("broker: order rejected: %s (%s)", confirm.DealStatus, confirm.Reason)
 	}
 	// Resolve the real position dealId by matching, not by trusting the
@@ -376,13 +418,40 @@ func (c *Client) UpdateStopLevel(dealID string, stopLevel float64) error {
 			break
 		}
 	}
-	if confirm.DealStatus != "" && confirm.DealStatus != "ACCEPTED" {
-		return fmt.Errorf("broker: stop amend rejected: %s (%s)", confirm.DealStatus, confirm.Reason)
+	// Never treat an UNCONFIRMED amend as success. If all 3 confirm
+	// polls failed or timed out (DealStatus still ""), that is NOT the
+	// same as a confirmed ACCEPTED -- the amend may have been silently
+	// rejected broker-side (e.g. "stop too close to market"), leaving
+	// the OLD stop still in force. The original code treated empty
+	// DealStatus as a pass (`confirm.DealStatus != "" && ... != "ACCEPTED"`
+	// is false when DealStatus is ""), which is a false SUCCESS -- found
+	// 2026-11-28 self-auditing this method the day after writing it.
+	// execute.go's caller relies on this error to decide whether to
+	// keep reporting the ORIGINAL stopLevel as authoritative; silently
+	// returning nil here means it would report a stop that may not
+	// actually be the one in force on the broker.
+	if confirm.DealStatus != "ACCEPTED" {
+		return fmt.Errorf("broker: stop amend unconfirmed (status %q): %s", confirm.DealStatus, confirm.Reason)
 	}
 	return nil
 }
 
-// ClosePosition closes an open position fully by its deal ID.
+// ClosePosition closes an open position fully by its deal ID, then
+// confirms the close actually completed via GET /api/v1/confirms/
+// {dealReference} -- same pattern as PlaceOrder and UpdateStopLevel.
+//
+// Added 2026-11-28: the original version only checked the DELETE's HTTP
+// status (<300) and returned nil -- per Capital.com's own API docs, a
+// 200 on DELETE /positions/{dealId} only means the close REQUEST was
+// accepted for async processing, carrying a dealReference that must
+// still be confirmed; it does not mean the position actually closed
+// (same "POST success != fill" gap PlaceOrder already guards against).
+// This matters most on the hard-daily-loss-cap flatten path
+// (ShouldFlattenEverything in execute.go): if a close silently failed
+// broker-side, the old code would still delete it from the local
+// trades journal and report "flattened", leaving a real, unmanaged,
+// losing position open on the broker at exactly the moment the system
+// most needed it closed.
 func (c *Client) ClosePosition(dealID string) error {
 	req, err := http.NewRequest("DELETE", c.cfg.BaseURL+"/api/v1/positions/"+dealID, nil)
 	if err != nil {
@@ -402,6 +471,26 @@ func (c *Client) ClosePosition(dealID string) error {
 	if resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("broker: close %s: status %d: %s", dealID, resp.StatusCode, string(data))
+	}
+	var placeResp struct {
+		DealReference string `json:"dealReference"`
+	}
+	data, _ := io.ReadAll(resp.Body)
+	if err := json.Unmarshal(data, &placeResp); err != nil || placeResp.DealReference == "" {
+		return fmt.Errorf("broker: close %s: accepted (status %d) but no dealReference in response, can't confirm: %s", dealID, resp.StatusCode, string(data))
+	}
+	var confirm struct {
+		DealStatus string `json:"dealStatus"`
+		Reason     string `json:"reason"`
+	}
+	for i := 0; i < 3; i++ {
+		time.Sleep(time.Duration(i) * 500 * time.Millisecond)
+		if err := c.do("GET", "/api/v1/confirms/"+placeResp.DealReference, nil, &confirm); err == nil && confirm.DealStatus != "" {
+			break
+		}
+	}
+	if confirm.DealStatus != "ACCEPTED" {
+		return fmt.Errorf("broker: close %s unconfirmed (status %q): %s", dealID, confirm.DealStatus, confirm.Reason)
 	}
 	return nil
 }

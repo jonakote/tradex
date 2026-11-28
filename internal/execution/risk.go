@@ -122,19 +122,27 @@ func (rm *RiskManager) DailyPnL() float64 {
 }
 
 // ApproveEntry runs every pre-trade gate. equity is current account
-// balance; openPositions is the current count; committedMarginPct is the
-// current sum of (margin / equity) across open positions, BEFORE adding
-// this trade's own margin.
-func (rm *RiskManager) ApproveEntry(equity float64, openPositions int, committedMarginPct, thisTradeMarginPct float64) (ok bool, reason string) {
+// balance; floatingPnL is the unrealized P&L of currently open
+// positions (Capital.com's own "profitLoss" field, NOT included in
+// balance) -- added 2026-11-28: the daily-loss-cap gates below used to
+// compare only RealizedPnL (closed trades) against the cap, so a severe
+// adverse move on still-open positions that hasn't hit its own stop yet
+// produced zero RealizedPnL and could not trip the hard cap, even
+// though real net worth (balance+floatingPnL) might already be down far
+// more than the cap allows. openPositions is the current count;
+// committedMarginPct is the current sum of (margin / equity) across
+// open positions, BEFORE adding this trade's own margin.
+func (rm *RiskManager) ApproveEntry(equity float64, floatingPnL float64, openPositions int, committedMarginPct, thisTradeMarginPct float64) (ok bool, reason string) {
 	if rm.KillSwitchActive() {
 		return false, "kill switch active (" + rm.cfg.KillSwitchPath + " exists)"
 	}
 	rm.load()
-	if equity > 0 && rm.state.RealizedPnL <= -equity*rm.cfg.HardDailyLossCapPct/100 {
-		return false, "hard daily loss cap breached — should already be flattened"
+	dailyPnL := rm.state.RealizedPnL + floatingPnL
+	if equity > 0 && dailyPnL <= -equity*rm.cfg.HardDailyLossCapPct/100 {
+		return false, "hard daily loss cap breached (realized+floating) — should already be flattened"
 	}
-	if equity > 0 && rm.state.RealizedPnL <= -equity*rm.cfg.SoftDailyLossCapPct/100 {
-		return false, "soft daily loss cap breached — no new entries until next UTC day"
+	if equity > 0 && dailyPnL <= -equity*rm.cfg.SoftDailyLossCapPct/100 {
+		return false, "soft daily loss cap breached (realized+floating) — no new entries until next UTC day"
 	}
 	if openPositions >= rm.cfg.MaxOpenPositions {
 		return false, "max open positions reached"
@@ -146,10 +154,11 @@ func (rm *RiskManager) ApproveEntry(equity float64, openPositions int, committed
 }
 
 // ShouldFlattenEverything reports whether the hard daily loss cap has been
-// breached and every open position must be force-closed now.
-func (rm *RiskManager) ShouldFlattenEverything(equity float64) bool {
+// breached (counting both realized AND floating P&L -- see ApproveEntry's
+// comment) and every open position must be force-closed now.
+func (rm *RiskManager) ShouldFlattenEverything(equity float64, floatingPnL float64) bool {
 	rm.load()
-	return equity > 0 && rm.state.RealizedPnL <= -equity*rm.cfg.HardDailyLossCapPct/100
+	return equity > 0 && (rm.state.RealizedPnL+floatingPnL) <= -equity*rm.cfg.HardDailyLossCapPct/100
 }
 
 // SizeToStop converts a risk-percent-of-equity and a chosen protective
